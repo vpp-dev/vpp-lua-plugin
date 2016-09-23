@@ -1,0 +1,24 @@
+diff --git a/plugins/Makefile.am b/plugins/Makefile.am
+index 5293e6e..31e195b 100644
+--- a/plugins/Makefile.am
++++ b/plugins/Makefile.am
+@@ -51,3 +51,7 @@ endif
+ if ENABLE_lb_PLUGIN
+ SUBDIRS += lb-plugin
+ endif
++
++if ENABLE_lua_PLUGIN
++SUBDIRS += lua-plugin
++endif
+diff --git a/plugins/configure.ac b/plugins/configure.ac
+index 6ee064e..c290487 100644
+--- a/plugins/configure.ac
++++ b/plugins/configure.ac
+@@ -58,6 +58,7 @@ PLUGIN_ENABLED(ioam)
+ PLUGIN_ENABLED(snat)
+ PLUGIN_ENABLED(ila)
+ PLUGIN_ENABLED(lb)
++PLUGIN_ENABLED(lua)
+ 
+ # Disabled plugins, require --enable-XXX-plugin
+ PLUGIN_DISABLED(vcgn)
