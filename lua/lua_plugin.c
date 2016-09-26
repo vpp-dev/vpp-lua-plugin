@@ -511,6 +511,10 @@ lua_run_command_fn (vlib_main_t * vm,
     return clib_error_return (0, "parse error: '%U'",
 				  format_unformat_error, input);
   }
+  if (!unformat (input, "%U", unformat_eof)) {
+    return clib_error_return (0, "parse error: '%U'",
+				  format_unformat_error, input);
+  }
 
   luaL_loadfile(L, (void *)lua_file_name); 
   int ret = lua_pcall(L, 0, 0, 0);
