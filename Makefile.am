@@ -21,11 +21,36 @@ vpppluginsdir = ${libdir}/vpp_plugins
 
 vppplugins_LTLIBRARIES = lua_plugin.la
 
-lua_plugin_la_SOURCES = lua/lua_plugin.c
+lua_plugin_la_SOURCES = lua/lua_plugin.c \
+	lua/lua.api.h
 
-noinst_HEADERS = lua/lua_plugin.h
+BUILT_SOURCES = lua/lua.api.h lua/lua.py
+
+noinst_HEADERS = \
+	lua/lua_plugin.h                              \
+	lua/lua.api.h
+
+#
+#	# lua/lua_all_api_h.h                     \
+#	# lua/lua_msg_enum.h                      \
+SUFFIXES = .api.h .api
+
+%.api.h: %.api
+	mkdir -p `dirname $@` ; \
+	$(CC) $(CPPFLAGS) -E -P -C -x c $^ \
+	| vppapigen --input - --output $@ --show-name $@
+
+%.py: %.api
+	$(info Creating Python binding for $@)
+	$(CC) $(CPPFLAGS) -E -P -C -x c $<                              \
+	| vppapigen --input - --python -                                \
+	| pyvppapigen.py --input - > $@
+
+pyapidir = ${prefix}/vpp_papi_plugins
+pyapi_DATA = lua/lua.py
+
+
 
 # Remove *.la files
 install-data-hook:
 	@(cd $(vpppluginsdir) && $(RM) $(vppplugins_LTLIBRARIES))
-

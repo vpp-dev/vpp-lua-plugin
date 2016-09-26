@@ -46,6 +46,7 @@ typedef struct {
 
   u32 ip6_lookup_next_index;
   lua_State *L;
+  u16 lua_api_message;
 } lua_main_t;
 
 

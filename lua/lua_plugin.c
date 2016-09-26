@@ -25,6 +25,56 @@
 #include <lua/lua_plugin.h>
 #include <vnet/plugin/plugin.h>
 #include <vnet/ip/lookup.h>
+#include <vlibapi/api.h>
+#include <vlibmemory/api.h>
+
+
+/* define message structures */
+#define vl_typedefs
+#include <lua/lua.api.h>
+#undef vl_typedefs
+
+/* define generated endian-swappers */
+#define vl_endianfun
+#include <lua/lua.api.h>
+#undef vl_endianfun
+
+/* instantiate all the print functions we know about */
+#define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
+#define vl_printfun
+#include <lua/lua.api.h>
+#undef vl_printfun
+
+/* Get the API version number */
+#define vl_api_version(n,v) static u32 api_version=(v);
+#include <lua/lua.api.h>
+#undef vl_api_version
+
+/*
+ * A handy macro to set up a message reply.
+ * Assumes that the following variables are available:
+ * mp - pointer to request message
+ * rmp - pointer to reply message type
+ * rv - return value
+ */
+
+#define REPLY_MACRO(t)                                          \
+do {                                                            \
+    unix_shared_memory_queue_t * q =                            \
+    vl_api_client_index_to_input_queue (mp->client_index);      \
+    if (!q)                                                     \
+        return;                                                 \
+                                                                \
+    rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
+    rmp->_vl_msg_id = ntohs((t)+lm->lua_api_message);               \
+    rmp->context = mp->context;                                 \
+    rmp->retval = ntohl(rv);                                    \
+                                                                \
+    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
+} while(0);
+
+
+
 
 static lua_main_t lua_main;
 
@@ -549,11 +599,25 @@ VLIB_CLI_COMMAND (lua_run_command, static) =
   .function = lua_run_command_fn,
 };
 
+/* API message handler */
+static void vl_api_lua_plugin_cmd_t_handler
+(vl_api_lua_plugin_cmd_t * mp)
+{
+  lua_main_t *lm = &lua_main;
+  vl_api_lua_plugin_cmd_reply_t * rmp;
+  int rv;
+
+  rv = 0;
+
+  REPLY_MACRO(0); // VL_API_LUA_PLUGIN_CMD_REPLY);
+}
+
 
 clib_error_t *
 lua_init (vlib_main_t * vm)
 {
   lua_main_t *lm = &lua_main;
+  u8 * name;
 
   lm->L = luaL_newstate();
   if (!lm->L) {
@@ -566,6 +630,20 @@ lua_init (vlib_main_t * vm)
     lua_createtable(lm->L, 0, 0);
     lua_setfield(lm->L, -2, "short_help");
   }
+
+  name = format (0, "lua_plugin_%08x%c", api_version, 0);
+
+  lm->lua_api_message = vl_msg_api_get_msg_ids
+      ((char *) name, 1);
+  vec_free(name);
+  printf("LUA API message#: %d\n", lm->lua_api_message);
+
+  vl_msg_api_set_handlers(lm->lua_api_message, "LUA_PLUGIN_CMD",
+     vl_api_lua_plugin_cmd_t_handler,
+     vl_noop_handler,
+     vl_api_lua_plugin_cmd_t_endian,
+     vl_api_lua_plugin_cmd_t_print,
+     sizeof(vl_api_lua_plugin_cmd_t), 1);
 
   return NULL;
 }
