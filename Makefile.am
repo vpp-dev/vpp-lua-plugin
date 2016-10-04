@@ -22,7 +22,8 @@ vpppluginsdir = ${libdir}/vpp_plugins
 vppplugins_LTLIBRARIES = lua_plugin.la
 
 lua_plugin_la_SOURCES = lua/lua_plugin.c \
-	lua/lua.api.h
+	lua/lua.api.h \
+	lua/setup.py
 
 BUILT_SOURCES = lua/lua.api.h lua/lua.py
 
@@ -45,6 +46,12 @@ SUFFIXES = .api.h .api
 	$(CC) $(CPPFLAGS) -E -P -C -x c $<                              \
 	| vppapigen --input - --python -                                \
 	| pyvppapigen.py --input - > $@
+
+install-exec-local:
+	mkdir -p $(prefix)/lib/python2.7/site-packages; \
+	PYTHONUSERBASE=$(prefix) \
+	pwd \
+	python lua/setup.py build_ext -L $(prefix)/lib64 install --user
 
 pyapidir = ${prefix}/vpp_papi_plugins
 pyapi_DATA = lua/lua.py

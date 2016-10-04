@@ -50,30 +50,6 @@
 #include <lua/lua.api.h>
 #undef vl_api_version
 
-/*
- * A handy macro to set up a message reply.
- * Assumes that the following variables are available:
- * mp - pointer to request message
- * rmp - pointer to reply message type
- * rv - return value
- */
-
-#define REPLY_MACRO(t)                                          \
-do {                                                            \
-    unix_shared_memory_queue_t * q =                            \
-    vl_api_client_index_to_input_queue (mp->client_index);      \
-    if (!q)                                                     \
-        return;                                                 \
-                                                                \
-    rmp = vl_msg_api_alloc (sizeof (*rmp));                     \
-    rmp->_vl_msg_id = ntohs((t)+lm->lua_api_message);               \
-    rmp->context = mp->context;                                 \
-    rmp->retval = ntohl(rv);                                    \
-                                                                \
-    vl_msg_api_send_shmem (q, (u8 *)&rmp);                      \
-} while(0);
-
-
 
 
 static lua_main_t lua_main;
@@ -604,12 +580,55 @@ static void vl_api_lua_plugin_cmd_t_handler
 (vl_api_lua_plugin_cmd_t * mp)
 {
   lua_main_t *lm = &lua_main;
+  lua_State *L = lm->L;
   vl_api_lua_plugin_cmd_reply_t * rmp;
   int rv;
+  char *lua_fn_name = "api_message";
+  int top = lua_gettop(L);
 
   rv = 0;
+  unix_shared_memory_queue_t * q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (!q)
+    return;
 
-  REPLY_MACRO(0); // VL_API_LUA_PLUGIN_CMD_REPLY);
+  rmp = vl_msg_api_alloc (sizeof (*rmp));
+  memset(rmp, 0, sizeof(*rmp));
+
+  lua_getglobal( L, "vpp");
+  if(lua_istable(L, -1)) {
+    lua_pushstring(L, lua_fn_name);
+    lua_gettable(L, -2);
+    if (lua_isfunction(L, -1)) {
+      lua_pushnumber(L, mp->submsg_id);
+      lua_pushlstring(L, (void *)mp->submsg_data, mp->submsg_data_length);
+      int nargs = 2;
+      if (lua_pcall(L, nargs, LUA_MULTRET, 0) != 0) {
+                        clib_warning("error running CLI function `%s': %s", lua_fn_name, lua_tostring(L, -1));
+         rv = -1;
+      } else {
+        int nstack = lua_gettop(L) - top;
+        if ((nstack == 3) && lua_isstring(L, -1) && lua_isnumber(L, -2)) {
+           size_t l = lua_strlen(L, -1);
+           size_t real_len = l > 255 ? 255 : l;
+           memcpy(rmp->submsg_data, lua_tostring(L, -1), real_len);
+           rmp->submsg_data_length = real_len;
+           rmp->submsg_id = htonl(lua_tonumber(L, -2));
+        } else {
+          clib_warning("%s should return an error code and the data", lua_fn_name);
+        }
+        lua_pop(L, nstack);
+      }
+    } else {
+      clib_warning("%s is not a function", lua_fn_name);
+      rv = -2;
+    }
+  }
+
+
+  rmp->_vl_msg_id = ntohs(1+lm->lua_api_message);
+  rmp->context = mp->context;
+  rmp->retval = ntohl(rv);
+  vl_msg_api_send_shmem (q, (u8 *)&rmp);
 }
 
 
