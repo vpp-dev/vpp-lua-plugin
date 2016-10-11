@@ -266,6 +266,10 @@ function vpp.api_write(vpp, api_name, req_table_arg)
     end
     for k,v in pairs(req_table) do 
       local field = vpp.msg_name_to_fields[api_name][k]
+      -- if the field is not an array type, try to coerce the argument to a number
+      if not field.array and type(v) == "string" then
+        v = tonumber(v)
+      end
       if type(v) == "string" then
         ffi.copy(req[k], v)
         if 0 == field.array then
