@@ -62,7 +62,7 @@ sample_node_fn (vlib_main_t * vm,
   u32 n_left_from, * from, * to_next;
   // sample_next_t next_index;
   int next_index;
-  lua_node_data_t *lnd = *(lua_node_data_t **)node->runtime_data;
+  lua_node_data_t *lnd = (lua_node_data_t *)&node->runtime_data;
   u32 pkts_swapped = 0;
 
   from = vlib_frame_vector_args (frame);
@@ -91,15 +91,18 @@ sample_node_fn (vlib_main_t * vm,
           n_left_to_next -= 1;
 
           /* b0 = vlib_get_buffer (vm, bi0); */
+	  printf("lnd: %p\n", lnd);
 
 	  if (lnd->callback_ref >= 0) {
 		lua_State *L = lua_main.L;
+                int top = lua_gettop(L);
 		lua_rawgeti(L, LUA_REGISTRYINDEX, lnd->callback_ref);
 		lua_pushnumber(L, bi0);
 		int nargs = 1;
 		if (lua_pcall(L, nargs, LUA_MULTRET, 0) != 0)
         		clib_warning("error running function `f': %s", lua_tostring(L, -1));
-    
+                int nstack = lua_gettop(L) - top;
+                lua_pop(L, nstack);
           }
 
 #ifdef AYXX_FIXME
@@ -318,8 +321,8 @@ static int lua_register_node(lua_State *L) {
      .n_next_nodes = 0,
   };
   vlib_main_t *vm = vlib_get_main ();
-  lua_main_t *lm = &lua_main;
-  lua_node_data_t *lnd = 0;
+  lua_node_data_t lnd_temp;
+  lua_node_data_t *lnd = &lnd_temp;
   u32 node_idx;
   nr.name = (char *) luaL_checkstring(L, 1);
   vlib_node_t *node = vlib_get_node_by_name (vm, (void *)nr.name);
@@ -329,7 +332,7 @@ static int lua_register_node(lua_State *L) {
   }
 
   if (!node) {
-    pool_get(lm->lua_nodes, lnd);
+    memset(lnd, 0, sizeof(*lnd));
     // printf("lnd: %p (%p) (%d bytes)\n", lnd, &lnd, nr.runtime_data_bytes);
     // printf("Is a function: %d\n", lua_isfunction(L, 2));
     // printf("Registering node: %s\n", nr.name);
@@ -337,10 +340,12 @@ static int lua_register_node(lua_State *L) {
     int cb_ref = luaL_ref(L, LUA_REGISTRYINDEX);
     // printf("Callback reference: %d\n", cb_ref);
     lnd->callback_ref = cb_ref;
+    vec_append(lnd->name, nr.name);
+    vec_terminate_c_string(lnd->name);
     node_idx = vlib_register_node(vm, &nr);
     // printf("node IDX: %d\n", node_idx);
     vlib_node_add_named_next_with_slot(vm, node_idx, "error-drop", 0);
-    vlib_node_set_runtime_data(vm, node_idx, &lnd, sizeof(lnd));
+    vlib_node_set_runtime_data(vm, node_idx, lnd, sizeof(*lnd));
     // icmp6_register_type(vm, ICMP6_echo_reply, node_idx);
     /* Push a node index as a true value since this is a new registration */
     lua_pushnumber(L, node_idx);

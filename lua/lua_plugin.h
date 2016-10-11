@@ -36,15 +36,6 @@ typedef struct {
 
 
 typedef struct {
-  lua_node_data_t *lua_nodes;
-
-  u64 lookup_table_nbuckets;
-  u64 lookup_table_size;
-  clib_bihash_24_8_t id_to_entry_table;
-
-  u32 lua_sir2lua_feature_index;
-
-  u32 ip6_lookup_next_index;
   lua_State *L;
   u16 lua_api_message;
 } lua_main_t;
