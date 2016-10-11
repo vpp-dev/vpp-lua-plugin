@@ -91,7 +91,7 @@ sample_node_fn (vlib_main_t * vm,
           n_left_to_next -= 1;
 
           /* b0 = vlib_get_buffer (vm, bi0); */
-	  printf("lnd: %p\n", lnd);
+	  // printf("lnd: %p\n", lnd);
 
 	  if (lnd->callback_ref >= 0) {
 		lua_State *L = lua_main.L;
