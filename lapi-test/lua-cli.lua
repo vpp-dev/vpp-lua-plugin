@@ -52,7 +52,7 @@ end,
 reader = function()
   local rl = {}
 
-  rl.init = function() 
+  rl.init = function()
     os.execute("stty -icanon min 1 -echo")
     rl.rawmode = true
   end
@@ -79,8 +79,8 @@ reader = function()
       io.stdout:write(rl.command)
     end
   end
- 
-  rl.store_history = function(cmd) 
+
+  rl.store_history = function(cmd)
     if cmd == "" then
       return
     end
@@ -108,26 +108,26 @@ reader = function()
 
       local ch = io.stdin:read(1)
       if ch:byte(1) == 27 then
-        -- CONTROL 
+        -- CONTROL
         local ch2 = io.stdin:read(1)
         -- arrows
         if ch2:byte(1) == 91 then
           local ch3 = io.stdin:read(1)
           local b = ch3:byte(1)
-          if b == 65 then 
+          if b == 65 then
             ch = "UP"
           elseif b == 66 then
-            ch = "DOWN" 
+            ch = "DOWN"
           elseif b == 67 then
-            ch = "RIGHT" 
+            ch = "RIGHT"
           elseif b == 68 then
-            ch = "LEFT" 
+            ch = "LEFT"
           end
           -- print("Byte: " .. ch3:byte(1))
           -- if ch3:byte(1)
         end
       end
-     
+
       if ch == "?" then
         io.stdout:write(ch)
         io.stdout:write("\n")
@@ -172,7 +172,7 @@ reader = function()
             rl.command = rl.history[rl.history_index]
           end
           rl.show_cmd()
-        end 
+        end
       else
         io.stdout:write(ch)
         rl.command = rl.command .. ch
@@ -184,7 +184,7 @@ reader = function()
     return rl.command
   end
   return rl
-end 
+end
 
 }
 
@@ -239,7 +239,7 @@ function keys(tbl)
   return t
 end
 
-function tset (parent, ...)    
+function tset (parent, ...)
 
   -- print ('set', ...)
 
@@ -267,7 +267,7 @@ function tset (parent, ...)
   end
 
 
-function tget (parent, ...)    
+function tget (parent, ...)
   local len = select ('#', ...)
   for i=1,len do
     parent = parent[select (i, ...)]
@@ -313,7 +313,7 @@ function print_line(txt)
     if ch == " " then
       pager_printed = 0
     elseif ch == "\n" then
-      pager_printed = pager_printed - 1 
+      pager_printed = pager_printed - 1
     elseif ch == "q" then
       pager_printed = 0
       pager_skipping = true
@@ -323,7 +323,7 @@ function print_line(txt)
   if not pager_skipping then
     print(txt)
     pager_printed = pager_printed + 1
-  else 
+  else
     -- skip printing
   end
 end
@@ -343,7 +343,7 @@ function paged_write(text)
         io.stdout:write(v)
       end
     end
-  end 
+  end
 end
 
 
@@ -394,7 +394,7 @@ function get_exact_choice(choices, val)
           substr_idx = i
           substr_seen = true
         end
-      end 
+      end
     end
   end
   return exact_idx or substr_idx
@@ -412,9 +412,9 @@ function device_cli_help(rl)
     table.insert(key, "")
     terse = false
   end
- 
+
   for i, v in ipairs(key) do
-    local choices = get_choices(tree, v) 
+    local choices = get_choices(tree, v)
     local idx = get_exact_choice(choices, v)
     if idx then
       local choice = choices[idx]
@@ -429,7 +429,7 @@ function device_cli_help(rl)
     if i == #key and not error then
       for j, w in ipairs(choices) do
         if terse then
-          paged_write(w .. "\t") 
+          paged_write(w .. "\t")
         else
           paged_write("  " .. w .. "\n")
         end
@@ -449,9 +449,9 @@ function device_cli_tab_complete(rl)
   local keylen = #key
   local fullcmd = ""
   local error = false
- 
+
   for i, v in ipairs(key) do
-    local choices = get_choices(tree, v) 
+    local choices = get_choices(tree, v)
     local idx = get_exact_choice(choices, v)
     if idx and choices[idx] ~= dotdotdot then
       local choice = choices[idx]
@@ -472,7 +472,7 @@ function device_cli_tab_complete(rl)
 end
 
 function device_cli_exec(rl)
-  
+
   local cmd_nopipe = rl.command
   local cmd_pipe = nil
 
@@ -481,7 +481,7 @@ function device_cli_exec(rl)
     cmd_nopipe = string.sub(rl.command, 1, pipe1-1)
     cmd_pipe = string.sub(rl.command, pipe2+1, -1)
   end
-  
+
   local key = readln.split(cmd_nopipe .. " <cr>", "[ ]+")
   local tree = rl.tree
   local keylen = #key
@@ -494,10 +494,10 @@ function device_cli_exec(rl)
   end
 
 
-  rl.choices = {} 
+  rl.choices = {}
 
   for i, v in ipairs(key) do
-    local choices = get_choices(tree, v) 
+    local choices = get_choices(tree, v)
     local idx = get_exact_choice(choices, v)
     if idx then
       local choice = choices[idx]
@@ -515,7 +515,7 @@ function device_cli_exec(rl)
       -- print("level " .. i .. " '" .. choice .. "'")
       table.insert(rl.choices, choice)
     else
-      print("level " .. i .. " : " .. table.concat(choices, " ") .. " ")
+      -- print("level " .. i .. " : " .. table.concat(choices, " ") .. " ")
       error = true
       return nil
     end
@@ -546,7 +546,7 @@ function populate_tree(commands)
         xtree = xtree[kk]
       end
     end
-  end 
+  end
   return tree
 end
 
@@ -578,38 +578,70 @@ function run_cli(vpp, cli)
     end
   else
     return "XXXXXLUACLI ERROR, RAW REPLY: " .. vpp.dump(reply)
-  end 
+  end
 end
 
 
+function toprintablestring(s)
+  if type(s) == "string" then
+    return "\n"..vpp.hex_dump(s)
+  else
+    return tostring(s)
+  end
+end
 
+function interactive_cli(r)
+  while not done do
+    pager_reset()
+    local cmd = r.readln()
+    if not cmd then
+      done = true
+    elseif cmd == "quit" or cmd == "exit" then
+      done = true
+    else
+      local func = device_cli_exec(r)
+      if func then
+	func(r)
+      else
+	if trim(cmd) == "" then
+	else
+	  for i = 1, #r.prompt do
+	    paged_write(" ")
+	  end
+	  paged_write("^\n% Invalid input detected at '^' marker.\n\n")
+	end
+      end
+    end
+  end
+end
 
 device = {}
 device.output = {}
 
 init_vpp(vpp)
 cmds_str = run_cli(vpp, "?")
-vpp_cmds = readln.split(cmds_str, "\n") 
+vpp_cmds = readln.split(cmds_str, "\n")
 vpp_clis = {}
 
 for linenum, line in ipairs(vpp_cmds) do
   local m,h = string.match(line, "^  (.-)  (.*)$")
-  if m and #m > 0 then 
+  if m and #m > 0 then
     table.insert(vpp_clis, m)
-    device.output["vpp debug cli " .. m] = function(rl) 
+    device.output["vpp debug cli " .. m] = function(rl)
       -- print("ARBITRARY CLI" .. vpp.dump(rl.choices))
+      print("LUACLI command: " .. table.concat(rl.choices, " "))
       local sub = {}
-      -- 
+      --
       for i=4, #rl.choices -1 do
         table.insert(sub, rl.choices[i])
       end
       local cli = table.concat(sub, " ")
       print("Running CLI: " .. tostring(cli))
       paged_write(run_cli(vpp, cli))
-    end 
-    device.output["vpp debug cli " .. m .. " " .. dotdotdot] = function(rl) 
+    end
+    device.output["vpp debug cli " .. m .. " " .. dotdotdot] = function(rl)
       print("ARGH")
-    end 
+    end
 
     local ret = run_cli(vpp, "help " .. m)
     device.output["help vpp debug cli " .. m] = { ret }
@@ -621,30 +653,53 @@ for linenum, line in ipairs(vpp_clis) do
 end
 
 for msgnum, msgname in ipairs(vpp.msg_number_to_name) do
-  local cli = string.gsub(msgname, "_", " ")
-  device.output["call " .. cli] = function(rl) 
+  local cli, numspaces = string.gsub(msgname, "_", " ")
+  device.output["call " .. cli .. " " .. dotdotdot] = function(rl)
+    print("ARGH")
+  end
+  device.output["call " .. cli] = function(rl)
+    print("LUACLI command: " .. table.concat(rl.choices, " "))
+    print("Running API: " .. msgname) -- vpp.dump(rl.choices))
     local out = {}
-    local ret = vpp:api_call(msgname, {})
-    for i, reply in ipairs(ret) do
-      table.insert(out, "Entry #" .. tostring(i))
-      for k, v in pairs(reply) do
-        table.insert(out, "   " .. tostring(k) .. " : " .. tostring(v))
-      end 
+    local args = {}
+    local ntaken = 0
+    local argname = ""
+    for i=(1+1+numspaces+1), #rl.choices-1 do
+      -- print(i, rl.choices[i])
+      if ntaken > 0 then
+        ntaken = ntaken -1
+      else
+        local fieldname = rl.choices[i]
+        local field = vpp.msg_name_to_fields[msgname][fieldname]
+        if field then
+          local s = rl.choices[i+1]
+          s=s:gsub("\\x(%x%x)",function (x) return string.char(tonumber(x,16)) end)
+          args[fieldname] = s
+          ntaken = 1
+        end
+      end
     end
-    -- paged_write(vpp.dump(ret) .. "\n\n") 
+    -- print("ARGS: ", vpp.dump(args))
+    local ret = vpp:api_call(msgname, args)
+    for i, reply in ipairs(ret) do
+      table.insert(out, "=================== Entry #" .. tostring(i))
+      for k, v in pairs(reply) do
+        table.insert(out, "   " .. tostring(k) .. " : " .. toprintablestring(v))
+      end
+    end
+    -- paged_write(vpp.dump(ret) .. "\n\n")
     paged_write(table.concat(out, "\n").."\n\n")
   end
-  device.output["call " .. cli .. " help"] = function(rl) 
+  device.output["call " .. cli .. " help"] = function(rl)
     local out = {}
     for k, v in pairs(vpp.msg_name_to_fields[msgname]) do
       table.insert(out, tostring(k) .. " : " .. v["ctype"] .. " ; " .. tostring(vpp.dump(v)) )
-    end 
+    end
     -- paged_write(vpp.dump(vpp.msg_name_to_fields[msgname]) .. "\n\n")
     paged_write(table.concat(out, "\n").."\n\n")
   end
 -- vpp.msg_name_to_number = {}
 end
-
 
 
 
@@ -660,28 +715,31 @@ print("===== CLI view, use ^D to end =====")
 r.tree = populate_tree(device.output)
 -- readln.pretty("xxxx", r.tree)
 
-while not done do 
-  pager_reset()
-  local cmd = r.readln()
-  if not cmd then
-    done = true
-  elseif cmd == "quit" or cmd == "exit" then
-    done = true
+
+for idx, an_arg in ipairs(arg) do
+  local fname = an_arg
+  if fname == "-i" then
+    pager_lines = 23
+    interactive_cli(r)
   else
-    local func = device_cli_exec(r)
-    if func then
-      func(r)
-    else
-      if trim(cmd) == "" then
-      else
-	for i = 1, #r.prompt do  
-	  paged_write(" ")
-	end
-	paged_write("^\n% Invalid input detected at '^' marker.\n\n")
+    pager_lines = 100000000
+    for line in io.lines(fname) do
+      r.command = line
+      local func = device_cli_exec(r)
+      if func then
+	func(r)
       end
     end
   end
 end
+
+if #arg == 0 then
+  print("You should specify '-i' as an argument for the interactive session,")
+  print("but with no other sources of commands, we start interactive session now anyway")
+   interactive_cli(r)
+end
+
+vpp:disconnect()
 r.done()
 
 
