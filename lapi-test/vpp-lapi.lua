@@ -1,65 +1,40 @@
-function dump(o)
-   if type(o) == 'table' then
-      local s = '{ '
-      for k,v in pairs(o) do
-         if type(k) ~= 'number' then k = '"'..k..'"' end
-         s = s .. '['..k..'] = ' .. dump(v) .. ','
-      end
-      return s .. '} '
-   else
-      return tostring(o)
-   end
-end
+--[[
+/*
+ * Copyright (c) 2016 Cisco and/or its affiliates.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+]]
 
-function hex_dump(buf)
-  local ret = {}
-  for i=1,math.ceil(#buf/16) * 16 do
-    if (i-1) % 16 == 0 then table.insert(ret, string.format('%08X  ', i-1)) end
-    table.insert(ret, ( i > #buf and '   ' or string.format('%02X ', buf:byte(i)) ))
-    if i %  8 == 0 then table.insert(ret, ' ') end
-    if i % 16 == 0 then table.insert(ret, buf:sub(i-16+1, i):gsub('%c','.')..'\n' ) end
-  end
-  return table.concat(ret)
-end
+local vpp = {}
 
+local ffi = require("ffi")
 
-function new_vpp_api(pneum_path)
-  local vpp = {}
-  vpp.ffi = require("ffi")
-  vpp.pneum_path = pneum_path
-  vpp.pneum = vpp.ffi.load(vpp.pneum_path)
+--[[
 
-  vpp.next_msg_num = 1
-  vpp.msg_name_to_number = {}
-  vpp.msg_name_to_fields = {}
-  vpp.msg_number_to_name = {}
-  vpp.events = {}
-  vpp.c_str = function(text_in)
-     local text = text_in .. "\0"
-     local c_str = vpp.ffi.new("char[?]", #text)
-     vpp.ffi.copy(c_str, text)
-     return c_str
-    end
+The basic type definitions. A bit of weird gymnastic with
+unionization of the hton* and ntoh* functions results
+is to make handling of signed and unsigned types a bit cleaner,
+essentially building typecasting into a C union.
 
--- pneum API
-  local pneum_api = [[
- int pneum_connect(char *name);
- int pneum_connect_sync(char *name);
- int pneum_disconnect(void);
- int pneum_read(char **data, int *l);
- int pneum_write(char *data, int len);
-
-void pneum_data_free(char *data);
-
-typedef int (__stdcall *pneum_cb_t)(char *data, int len);
-int pneum_set_callback (pneum_cb_t cb);
+The vl_api_opaque_message_t is a synthetic type assumed to have
+enough storage to hold the entire API message regardless of the type.
+During the operation it is casted to the specific message struct types.
 
 ]]
 
-  vpp.ffi.cdef(pneum_api);
 
+ffi.cdef([[
 
-local vppapi = [[
 typedef uint8_t u8;
 typedef int8_t i8;
 typedef uint16_t u16;
@@ -71,40 +46,105 @@ typedef int64_t i64;
 typedef double f64;
 typedef float f32;
 
-uint16_t htons(uint16_t hostshort);
-uint16_t ntohs(uint16_t hostshort);
-uint32_t htonl(uint32_t along);
-uint32_t ntohl(uint32_t along);
+#pragma pack(1)
+typedef union {
+  u16 u16;
+  i16 i16;
+} lua_ui16t;
+
+#pragma pack(1)
+typedef union {
+  u32 u32;
+  i32 i32;
+} lua_ui32t;
+
+lua_ui16t htons(uint16_t hostshort);
+lua_ui16t ntohs(uint16_t hostshort);
+lua_ui32t htonl(uint32_t along);
+lua_ui32t ntohl(uint32_t along);
 
 #pragma pack(1)
 typedef struct _vl_api_opaque_message {
   u16 _vl_msg_id;
-  u8  data[32768]; 
+  u8  data[65536];
 } vl_api_opaque_message_t;
+]])
+
+
+function vpp.dump(o)
+   if type(o) == 'table' then
+      local s = '{ '
+      for k,v in pairs(o) do
+         if type(k) ~= 'number' then k = '"'..k..'"' end
+         s = s .. '['..k..'] = ' .. vpp.dump(v) .. ','
+      end
+      return s .. '} '
+   else
+      return tostring(o)
+   end
+end
+
+function vpp.hex_dump(buf)
+  local ret = {}
+  for i=1,math.ceil(#buf/16) * 16 do
+    if (i-1) % 16 == 0 then table.insert(ret, string.format('%08X  ', i-1)) end
+    table.insert(ret, ( i > #buf and '   ' or string.format('%02X ', buf:byte(i)) ))
+    if i %  8 == 0 then table.insert(ret, ' ') end
+    if i % 16 == 0 then table.insert(ret, buf:sub(i-16+1, i):gsub('%c','.')..'\n' ) end
+  end
+  return table.concat(ret)
+end
+
+
+function vpp.c_str(text_in)
+  local text = text_in .. "\0"
+  local c_str = ffi.new("char[?]", #text)
+  ffi.copy(c_str, text)
+  return c_str
+end
+
+
+function vpp.init(vpp, args)
+  local pneum_api = args.pneum_api or [[
+ int pneum_connect(char *name);
+ int pneum_connect_sync(char *name);
+ int pneum_disconnect(void);
+ int pneum_read(char **data, int *l);
+ int pneum_write(char *data, int len);
+
+void pneum_data_free(char *data);
 ]]
 
-  vpp.ffi.cdef(vppapi)
+  vpp.pneum_path = args.pneum_path
+  vpp.pneum = ffi.load(vpp.pneum_path)
+  ffi.cdef(pneum_api)
+
+  vpp.next_msg_num = 1
+  vpp.msg_name_to_number = {}
+  vpp.msg_name_to_fields = {}
+  vpp.msg_number_to_name = {}
+  vpp.events = {}
 
   vpp.accessors = {}
   vpp.accessors["u64"] = {}
-  vpp.accessors["u64"].lua2c = function(luaval) return luaval end
-  vpp.accessors["u64"].c2lua = function(cval) return cval end
+  vpp.accessors["u64"].lua2c = function(luaval) return luaval end -- FIXME
+  vpp.accessors["u64"].c2lua = function(cval) return cval end -- FIXME
   vpp.accessors["u32"] = {}
-  vpp.accessors["u32"].lua2c = function(luaval) return vpp.ffi.C.htonl(luaval) end
-  vpp.accessors["u32"].c2lua = function(cval) return vpp.ffi.C.ntohl(cval) end
+  vpp.accessors["u32"].lua2c = function(luaval) return ffi.C.htonl(luaval).u32 end
+  vpp.accessors["u32"].c2lua = function(cval) return ffi.C.ntohl(cval).u32 end
   vpp.accessors["u16"] = {}
-  vpp.accessors["u16"].lua2c = function(luaval) return vpp.ffi.C.htons(luaval) end
-  vpp.accessors["u16"].c2lua = function(cval) return vpp.ffi.C.ntohs(cval) end
+  vpp.accessors["u16"].lua2c = function(luaval) return ffi.C.htons(luaval).u16 end
+  vpp.accessors["u16"].c2lua = function(cval) return ffi.C.ntohs(cval).u16 end
   vpp.accessors["u8"] = {}
   vpp.accessors["u8"].lua2c = function(luaval) return luaval end
   vpp.accessors["u8"].c2lua = function(cval) return cval end
 
   vpp.accessors["i64"] = {}
-  vpp.accessors["i64"].lua2c = function(luaval) return luaval end
-  vpp.accessors["i64"].c2lua = function(cval) return cval end
+  vpp.accessors["i64"].lua2c = function(luaval) return luaval end -- FIXME
+  vpp.accessors["i64"].c2lua = function(cval) return cval end -- FIXME
   vpp.accessors["i32"] = {}
-  vpp.accessors["i32"].lua2c = function(luaval) return luaval end
-  vpp.accessors["i32"].c2lua = function(cval) return cval end
+  vpp.accessors["i32"].lua2c = function(luaval) return ffi.C.htonl(ffi.cast('u32'),luaval).i32 end
+  vpp.accessors["i32"].c2lua = function(cval) return ffi.C.ntohl(ffi.cast('u32', cval)).i32 end
   vpp.accessors["i16"] = {}
   vpp.accessors["i16"].lua2c = function(luaval) return luaval end
   vpp.accessors["i16"].c2lua = function(cval) return cval end
@@ -113,7 +153,7 @@ typedef struct _vl_api_opaque_message {
   vpp.accessors["i8"].c2lua = function(cval) return cval end
   vpp.accessors["_string_"] = {}
   vpp.accessors["_string_"].lua2c = function(luaval) return vpp.c_str(luaval) end
-  vpp.accessors["_string_"].c2lua = function(cval, len) return len and vpp.ffi.string(cval, len) or vpp.ffi.string(cval) end
+  vpp.accessors["_string_"].c2lua = function(cval, len) return len and ffi.string(cval, len) or ffi.string(cval) end
   vpp.accessors["_message_"] = {}
   vpp.accessors["_message_"].lua2c = function(luaval)
     return luaval
@@ -122,9 +162,9 @@ typedef struct _vl_api_opaque_message {
     return cval
   end
 
+end
 
-
-  vpp.connect = function (vpp, client_name)
+function vpp.connect(vpp, client_name)
     local name = "lua_client"
     if client_name then
       name = client_name
@@ -132,14 +172,19 @@ typedef struct _vl_api_opaque_message {
     return vpp.pneum.pneum_connect_sync(vpp.c_str(client_name))
   end
 
-  vpp.disconnect = function (vpp)
+function vpp.disconnect(vpp)
     vpp.pneum.pneum_disconnect()
   end
 
-  vpp.consume_api = function(vpp, path)
+function vpp.consume_api(vpp, path)
     print("Consuming the VPP api from "..path)
     local ffii = {}
-    local data = io.open(path, "r"):read("*all")
+    local f = io.open(path, "r")
+    if not f then
+      print("Could not open " .. path)
+      return nil
+    end
+    local data = f:read("*all")
     print ("data len: ", #data)
     data = data:gsub("\n(.-)(%S+)%s*{([^}]*)}", function (preamble, name, members) 
       local onedef = "\n\n#pragma pack(1)\ntypedef struct _vl_api_"..name.. " {\n" ..
@@ -196,10 +241,10 @@ typedef struct _vl_api_opaque_message {
       end)
     local cdef = table.concat(ffii)
     -- print(cdef)
-    vpp.ffi.cdef(cdef)
+    ffi.cdef(cdef)
   end
 
-  vpp.api_write = function (vpp, api_name, req_table_arg)
+function vpp.api_write(vpp, api_name, req_table_arg)
     local msg_num = vpp.msg_name_to_number[api_name]
     if not msg_num then
       print ("API call "..api_name.." is not known")
@@ -209,43 +254,58 @@ typedef struct _vl_api_opaque_message {
 
     local req_type = "vl_api_" .. api_name .. "_t"
 
-    local reqptr = vpp.ffi.new(req_type .. "[1]")
-    local req = reqptr[0]
+    local reqstore = ffi.new("vl_api_opaque_message_t[1]")
 
-    req._vl_msg_id = vpp.ffi.C.htons(msg_num);
+    local reqptr = ffi.cast(req_type .. "*", reqstore) -- ffi.new(req_type .. "[1]")
+    local req = reqptr[0]
+    local additional_len = 0 -- for the variable length field at the end of the message
+
+    req._vl_msg_id = ffi.C.htons(msg_num).u16;
     if req_table_arg then
       req_table = req_table_arg
     end
     for k,v in pairs(req_table) do 
+      local field = vpp.msg_name_to_fields[api_name][k]
       if type(v) == "string" then
-        vpp.ffi.copy(req[k], v)
+        ffi.copy(req[k], v)
+        if 0 == field.array then
+          additional_len = additional_len + #v
+          -- If there is a variable storing the length
+          -- and the input table does not set it, do magic
+          if field.array_size and not req_table[field.array_size] then
+            local size_field = vpp.msg_name_to_fields[api_name][field.array_size]
+            if size_field then
+              req[field.array_size] = size_field.accessors.lua2c(#v)
+            end
+          end
+        end
       else 
-        req[k] = v
+        req[k] = field.accessors.lua2c(v)
       end
     end
 
-    -- print("Len of req:", vpp.ffi.sizeof(req))
-    res = vpp.pneum.pneum_write(vpp.ffi.cast('void *', reqptr), vpp.ffi.sizeof(req))
+    -- print("Len of req:", ffi.sizeof(req))
+    res = vpp.pneum.pneum_write(ffi.cast('void *', reqptr), ffi.sizeof(req) + additional_len)
     -- print("write res:", res)
   end
 
-  vpp.api_read = function (vpp)
+function vpp.api_read(vpp)
     local rep_type = "vl_api_opaque_message_t"
-    local rep = vpp.ffi.new(rep_type .. ' *[1]')
-    local replen = vpp.ffi.new("int[1]")
+    local rep = ffi.new(rep_type .. ' *[1]')
+    local replen = ffi.new("int[1]")
     local out = {}
     -- print("Before read")
-    res = vpp.pneum.pneum_read(vpp.ffi.cast("void *", rep), replen)
+    res = vpp.pneum.pneum_read(ffi.cast("void *", rep), replen)
 
     --print("read:", res)
     --print("Length: ", replen[0])
-    local reply_msg_num = vpp.ffi.C.ntohs(rep[0]._vl_msg_id)
+    local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id).u16
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
-    -- hex_dump(vpp.ffi.string(rep[0], replen[0]))
+    -- hex_dump(ffi.string(rep[0], replen[0]))
     -- print("L7 result:", ffi.C.ntohl(rep[0].retval))
-    local result_bytes =  vpp.ffi.string(rep[0], replen[0])
+    local result_bytes =  ffi.string(rep[0], replen[0])
     -- print("Just before data free")
-    local reply_typed_ptr = vpp.ffi.cast("vl_api_" .. reply_msg_name .. "_t *", rep[0])
+    local reply_typed_ptr = ffi.cast("vl_api_" .. reply_msg_name .. "_t *", rep[0])
     for k, v in pairs(vpp.msg_name_to_fields[reply_msg_name]) do
       if v.accessors and v.accessors.c2lua then
         local len = v.array
@@ -271,12 +331,12 @@ typedef struct _vl_api_opaque_message {
     end
     out.luaapi_message_name = reply_msg_name
     out.luaapi_message_number = reply_msg_num
-    vpp.pneum.pneum_data_free(vpp.ffi.cast('void *',rep[0]))
+    vpp.pneum.pneum_data_free(ffi.cast('void *',rep[0]))
     -- print("Just after data free")
     return reply_msg_name, out, result_bytes
   end
 
-  vpp.api_call = function (vpp, api_name, req_table, options_in)
+function vpp.api_call(vpp, api_name, req_table, options_in)
     local msg_num = vpp.msg_name_to_number[api_name] 
     local end_message_name = api_name .."_reply"
     local replies = {}
@@ -308,72 +368,4 @@ typedef struct _vl_api_opaque_message {
     return replies
   end
 
-  return vpp
-end
-
-function sleep(n)
-  os.execute("sleep " .. tonumber(n))
-end
-
-
-root_dir = "/home/ubuntu/vpp"
-pneum_path = root_dir .. "/build-root/install-vpp_debug-native/vpp-api/lib64/libpneum.so"
-vpp = new_vpp_api(pneum_path)
-
-vpp:consume_api(root_dir .. "/build-root/install-vpp_debug-native/vlib-api/vlibmemory/memclnt.api")
-vpp:consume_api(root_dir .. "/build-root/install-vpp_debug-native/vpp/vpp-api/vpe.api")
-
-vpp:connect("aytest")
-
-
--- api calls
-reply = vpp:api_call("show_version")
-print("Version: ", reply[1].version)
-print(hex_dump(reply[1].version))
-print(dump(reply))
-print("---")
-
-
--- reply = vpp:api_call("sw_interface_dump", { context = 42, name_filter = "local", name_filter_valid = 1 } )
-reply = vpp:api_call("sw_interface_dump", { context = 42 }) 
-for i, intf in ipairs(reply) do
-  print(i, intf.sw_if_index, intf.interface_name)
-  print(hex_dump(intf.l2_address))
-end
-print(dump(reply))
-print("---")
-
-reply = vpp:api_call("get_first_msg_id", { name = "lua_plugin_a97dbfae" } )
-vpp.next_msg_num = tonumber(reply[1].first_msg_id)
-print(dump(reply))
-vpp:consume_api(root_dir .. "/plugins/lua-plugin/lua/lua.api")
-print("---")
-
-data = "asdfg"
-reply = vpp:api_call("lua_plugin_cmd", { submsg_id = 32, submsg_data = data, submsg_data_length = #data }, { force_ping = true } )
-print(dump(reply))
-
--- print(reply[1].program)
-os.exit(1)
-
-print("About to start cycle")
-
-count = 1
-for i = 1,100000 do
-  -- print(i)
-  vpp:api_call("show_version")
-  count = count + 1
-  -- print(i, "done")
-end
-print (count)
--- vpp:api_write("sw_interface_dump", { context = 42 } )
---[[
-replies = vpp:api_call("get_first_msg_id", { name = "snat_93f810b9" } )
-hex_dump(replies[1])
-replies = vpp:api_call("get_first_msg_id", { name = "ioam_export_eb694f98" } )
-hex_dump(replies[1])
-]]
-
-vpp:disconnect()
-
-
+return vpp

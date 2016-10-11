@@ -1,8 +1,8 @@
 diff --git a/vpp-api/python/pneum/pneum.c b/vpp-api/python/pneum/pneum.c
-index 7250cf6..9f4087f 100644
+index ebe47b2..f6f3d78 100644
 --- a/vpp-api/python/pneum/pneum.c
 +++ b/vpp-api/python/pneum/pneum.c
-@@ -144,6 +144,28 @@ pneum_connect (char *name)
+@@ -147,6 +147,28 @@ pneum_connect (char * name, char * chroot_prefix)
    return (0);
  }
  
@@ -31,7 +31,7 @@ index 7250cf6..9f4087f 100644
  int
  pneum_disconnect (void)
  {
-@@ -195,6 +217,12 @@ pneum_read (char **p, int *l)
+@@ -198,6 +220,12 @@ pneum_read (char **p, int *l)
    return (rv);
  }
  
@@ -45,17 +45,17 @@ index 7250cf6..9f4087f 100644
   * XXX: Makes the assumption that client_index is the first member
   */
 diff --git a/vpp-api/python/pneum/pneum.h b/vpp-api/python/pneum/pneum.h
-index 75fccf8..75f87d1 100644
+index 75b10f8..7ca66ff 100644
 --- a/vpp-api/python/pneum/pneum.h
 +++ b/vpp-api/python/pneum/pneum.h
-@@ -16,8 +16,10 @@
- #define included_pneum_h
- 
- int pneum_connect(char *name);
-+int pneum_connect_sync(char *name);
- int pneum_disconnect(void);
+@@ -20,4 +20,10 @@ int pneum_disconnect(void);
  int pneum_read(char **data, int *l);
-+void pneum_data_free(char *data);
  int pneum_write(char *data, int len);
  
++/* Synchronous API connect - no callback */
++int pneum_connect_sync(char *name);
++
++/* Call to free the data read via pneum_read */
++void pneum_data_free(char *data);
++
  #endif
