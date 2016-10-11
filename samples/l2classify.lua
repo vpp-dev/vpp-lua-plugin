@@ -32,6 +32,12 @@ function lua_2_cb(bi0)
   hex_dump(txt)
 end
 
+function lua_3_cb(bi0)
+  print("Lua third callback, buffer index:", bi0)
+  local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
+  hex_dump(txt)
+end
+
 
 local is_new, node_id = vpp.register_node("lua-test-print", lua_cb)
 print("Node ID: ", node_id)
@@ -39,8 +45,12 @@ print("Node ID: ", node_id)
 local is_new2, node_id2 = vpp.register_node("lua-test2-print", lua_2_cb)
 print("Node ID 2: ", node_id2)
 
+local is_new3, node_id3 = vpp.register_node("lua-test3-print", lua_3_cb)
+print("Node ID 3: ", node_id3)
+
 ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), 183, node_id, 16)
 ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), 183, node_id2, 17)
+ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), 183, node_id3, 18)
 
 --[[
 

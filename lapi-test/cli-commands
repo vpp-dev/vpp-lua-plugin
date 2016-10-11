@@ -1,0 +1,29 @@
+call sw interface dump name_filter_valid 1 name_filter local
+# call classify add del table is_add 1 skip_n_vectors 0 mask \xFF\xFF\xFF\xFF\xAA\xBB\xFF\xFF match_n_vectors 1 nbuckets 32 memory_size 20000 next_table_index -1
+
+call classify add del table is_add 1 skip_n_vectors 0 mask \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 match_n_vectors 1 nbuckets 32 memory_size 20000 table_index 13 next_table_index -1 miss_next_index -1
+call classify add del table is_add 1 skip_n_vectors 0 mask \xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 match_n_vectors 1 nbuckets 32 memory_size 20000 table_index 13 next_table_index 0 miss_next_index -1
+call classify add del table is_add 1 skip_n_vectors 0 mask \xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 match_n_vectors 1 nbuckets 32 memory_size 20000 table_index 13 next_table_index 1 miss_next_index -1
+
+# call classify add del table is_add 1 skip_n_vectors 0 mask \xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF match_n_vectors 1 nbuckets 32 memory_size 20000 table_index 13 next_table_index 0
+
+# call classify add del session is_add 1 table_index 1 match \x00
+# call classify add del session is_add 1 table_index 0 match \x00
+# call classify add del session is_add 1 table_index 1 match \xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF
+# call classify add del session is_add 1 table_index 1 match \xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFE
+
+# should match anything
+call classify add del session is_add 1 table_index 0 match \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 hit_next_index 18
+
+# call classify add del session is_add 1 table_index 1 match \xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF hit_next_index 17
+call classify add del session is_add 1 table_index 1 match \x33\x33\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 hit_next_index 17
+call classify add del session is_add 1 table_index 1 match \x33\x33\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 hit_next_index 17
+
+call classify add del session is_add 1 table_index 2 match \x33\x33\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 hit_next_index 16
+vpp debug cli lua run plugins/lua-plugin/samples/l2classify.lua
+vpp debug cli set interface l2 input classify intfc af_packet1 ip6-table 2
+
+
+
+vpp debug cli show classify tables
+
