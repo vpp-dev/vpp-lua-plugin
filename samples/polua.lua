@@ -267,6 +267,8 @@ end
 
 function polua_ip4_output_cb(bi0)
   local sw_if_index = vpp.get_rx_interface(bi0)
+  local ppi = polua.per_interface[sw_if_index][2] -- output
+  local recirc_slot = polua.classify_recirc_slots_ip4[2] -- output
   -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
   print("PoLua IP4 output callback, buffer index:", bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
@@ -278,8 +280,6 @@ function polua_ip4_output_cb(bi0)
   hex_dump(txt)
   local proto = string.byte(vpp.get_packet_bytes(bi0, 23))
   print("Protocol: " .. tostring(proto))
-  local ppi = polua.per_interface[sw_if_index][2] -- output
-  local recirc_slot = polua.classify_recirc_slots_ip4[2] -- output
 
 end
 
@@ -337,6 +337,26 @@ function polua_ip6_output_cb(bi0)
   hex_dump(txt)
 end
 
+function set_classify_table_in(sw_if_index, ip4_table_index, ip6_table_index, other_table_index)
+  print("SET_CLASSIFY_L2_IN:" .. tostring(sw_if_index) .. " ip4: " .. tostring(ip4_table_index) .. " ip6: " .. ip6_table_index .. " other: " .. other_table_index)
+  return ffi.C.vnet_l2_input_classify_set_tables(sw_if_index, ip4_table_index, ip6_table_index, other_table_index)
+end
+function set_classify_table_out(sw_if_index, ip4_table_index, ip6_table_index, other_table_index)
+  print("SET_CLASSIFY_L2_OUT:" .. tostring(sw_if_index) .. " ip4: " .. tostring(ip4_table_index) .. " ip6: " .. ip6_table_index .. " other: " .. other_table_index)
+  return ffi.C.vnet_l2_output_classify_set_tables(sw_if_index, ip4_table_index, ip6_table_index, other_table_index)
+end
+
+function set_classify_enable_in(sw_if_index, enable_disable)
+  print("CLASSIFY_L2_ENABLE_IN: " .. tostring(sw_if_index) .. " enable: " .. tostring(enable_disable))
+  return ffi.C.vnet_l2_input_classify_enable_disable (sw_if_index, enable_disable)
+end
+function set_classify_enable_out(sw_if_index, enable_disable)
+  print("CLASSIFY_L2_ENABLE_OUT: " .. tostring(sw_if_index) .. " enable: " .. tostring(enable_disable))
+  return ffi.C.vnet_l2_output_classify_enable_disable (sw_if_index, enable_disable)
+end
+
+
+
 polua.dirs            = { "input" , "output" }
 polua.node_ip4_names            = { "lua-polua-ip4-input", "lua-polua-ip4-output" }
 polua.node_ip4_cbs              = { polua_ip4_input_cb, polua_ip4_output_cb }
@@ -355,8 +375,10 @@ polua.classify_slots_print      = { -1, -1 }
 -- recirculation slots in ip4/ip6 callbacks for classifiers
 polua.classify_recirc_slots_ip4        = { -1, -1 }
 polua.classify_recirc_slots_ip6        = { -1, -1 }
-polua.fn_set_classify_tables   = { ffi.C.vnet_l2_input_classify_set_tables, ffi.C.vnet_l2_output_classify_set_tables }
-polua.fn_classify_enable_disable = { ffi.C.vnet_l2_input_classify_enable_disable, ffi.C.vnet_l2_output_classify_enable_disable }
+-- polua.fn_set_classify_tables   = { ffi.C.vnet_l2_input_classify_set_tables, ffi.C.vnet_l2_output_classify_set_tables }
+polua.fn_set_classify_tables   = { set_classify_table_in, set_classify_table_out }
+-- polua.fn_classify_enable_disable = { ffi.C.vnet_l2_input_classify_enable_disable, ffi.C.vnet_l2_output_classify_enable_disable }
+polua.fn_classify_enable_disable = { set_classify_enable_in, set_classify_enable_out }
 polua.per_interface = {}
 
 function preconfig_polua(i)
@@ -536,6 +558,14 @@ function polua_setup_out(sw_if_index, is_enable)
   return polua_setup_inout(2, sw_if_index, is_enable)
 end
 
+function polua_setup_clean()
+  vpp.for_interfaces(function(name, swid)
+     print(tostring(name) .. " : " .. tostring(swid))
+     res = polua.fn_set_classify_tables[1](swid, -1, -1, -1)
+     res = polua.fn_set_classify_tables[2](swid, -1, -1, -1)
+  end)
+end
+
 function vpp.CLI_lua_polua(cmd, input)
   -- If no input has been supplied, it is registration time, return help strings
   if not input then
@@ -562,12 +592,36 @@ function vpp.CLI_lua_polua(cmd, input)
     if is_out then
       return polua_setup_out(swidx, is_enable)
     end
+  elseif (1 == ffi.C.unformat(input, c_str("clean"))) then
+    polua_setup_clean()
   else
     -- If we return a string, this triggers an error with that string as a message
     return "need interface name"
   end
 end
 
+function vpp.CLI_show_lua_polua(cmd, input)
+  -- If no input has been supplied, it is registration time, return help strings
+  if not input then
+    return {
+      long_help = "long help for polua commands",
+      short_help = "lua polua commands"
+    }
+  end
 
+  vpp.for_interfaces(function(name, swid)
+    print(tostring(name) .. " : " .. tostring(swid))
+    local ppi = polua.per_interface[swid] or {}
+    local inout_name = { "in", "out" }
+    for i = 1,2 do
+      if ppi[i] then
+        print("    [ " .. inout_name[i] .. " ]")
+        print("             TCP/UDP=> ip4table " .. tostring(ppi[i].tcp_udp_tables[1]) .. " ip6table    " .. tostring(ppi[i].tcp_udp_tables[2]))
+        print("             ICMP   => ip4table " .. tostring(ppi[i].icmp_tables[1]) .. " ip6table    " .. tostring(ppi[i].icmp_tables[2]))
+      end
+    end
+  end)
+
+end
 
 
