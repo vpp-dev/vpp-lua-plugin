@@ -54,8 +54,26 @@
 
 static lua_main_t lua_main;
 
+typedef struct {
+  u32 next_index;
+  u32 sw_if_index;
+} luanode_trace_t;
+
+/* packet trace format function */
+static u8 * format_luanode_trace (u8 * s, va_list * args)
+{
+  CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
+  CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
+  luanode_trace_t * t = va_arg (*args, luanode_trace_t *);
+
+  s = format (s, "LUA_plugin: sw_if_index %d, next index %d",
+              t->sw_if_index, t->next_index);
+  return s;
+}
+
+
 static uword
-sample_node_fn (vlib_main_t * vm,
+luaplugin_node_fn (vlib_main_t * vm,
                   vlib_node_runtime_t * node,
                   vlib_frame_t * frame)
 {
@@ -78,9 +96,9 @@ sample_node_fn (vlib_main_t * vm,
       while (n_left_from > 0 && n_left_to_next > 0)
         {
           u32 bi0;
-          /* vlib_buffer_t * b0; */
+          vlib_buffer_t * b0;
           u32 next0 = 0; // SAMPLE_NEXT_INTERFACE_OUTPUT;
-          /* u32 sw_if_index0; */
+          u32 sw_if_index0;
 
           /* speculatively enqueue b0 to the current next frame */
           bi0 = from[0];
@@ -90,7 +108,7 @@ sample_node_fn (vlib_main_t * vm,
           n_left_from -= 1;
           n_left_to_next -= 1;
 
-          /* b0 = vlib_get_buffer (vm, bi0); */
+          b0 = vlib_get_buffer (vm, bi0);
 	  // printf("lnd: %p\n", lnd);
 
 	  if (lnd->callback_ref >= 0) {
@@ -102,22 +120,22 @@ sample_node_fn (vlib_main_t * vm,
 		if (lua_pcall(L, nargs, LUA_MULTRET, 0) != 0)
         		clib_warning("error running function `f': %s", lua_tostring(L, -1));
                 int nstack = lua_gettop(L) - top;
+                next0 = lua_isnumber(L, -1) ? luaL_checknumber(L, -1) : 0;
                 lua_pop(L, nstack);
           }
 
-#ifdef AYXX_FIXME
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
           /* Send pkt back out the RX interface */
           vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
-            sample_trace_t *t =
+            luanode_trace_t *t =
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
             }
-#endif
+          next0 = next0 < node->n_next_nodes ? next0 : 0; // sanity check
 
           pkts_swapped += 1;
 
@@ -184,6 +202,11 @@ static int lua_for_interfaces(lua_State *L) {
   return 1; 
 }
 
+extern vnet_classify_main_t vnet_classify_main;
+static int lua_vnet_classify_get_main(lua_State *L) {
+  lua_pushlightuserdata(L, &vnet_classify_main);
+  return 1;
+}
 
 static int lua_vnet_get_main(lua_State *L) {
   lua_pushlightuserdata(L, vnet_get_main());
@@ -250,6 +273,27 @@ static int lua_set_tx_interface(lua_State *L) {
   return 0;
 }
 
+static int lua_get_l2_opaque(lua_State *L) {
+  /* arguments: bi0 */
+  vlib_main_t *vm = vlib_get_main ();
+  vlib_buffer_t * b0;
+
+  u32 bi0 = luaL_checknumber(L, 1);
+  b0 = vlib_get_buffer (vm, bi0);
+  lua_pushnumber(L, vnet_buffer (b0)->l2_classify.opaque_index);
+  return 1;
+}
+
+static int lua_set_l2_opaque(lua_State *L) {
+  /* arguments: bi0, swidx */
+  vlib_main_t *vm = vlib_get_main ();
+  vlib_buffer_t * b0;
+  u32 bi0 = luaL_checknumber(L, 1);
+  b0 = vlib_get_buffer (vm, bi0);
+  u32 opaque = luaL_checknumber(L, 2);
+  vnet_buffer (b0)->l2_classify.opaque_index = opaque;
+  return 0;
+}
 
 
 static int lua_set_packet_bytes(lua_State *L) {
@@ -313,12 +357,15 @@ static int lua_get_packet_bytes(lua_State *L) {
   return 1;
 }
 
+
+
 static int lua_register_node(lua_State *L) {
   vlib_node_registration_t nr = {
      .name = "lua-sample",
-     .function = sample_node_fn,
+     .function = luaplugin_node_fn,
      .vector_size = sizeof(u32),
      .n_next_nodes = 0,
+     .format_trace = format_luanode_trace,
   };
   vlib_main_t *vm = vlib_get_main ();
   lua_node_data_t lnd_temp;
@@ -367,6 +414,7 @@ static int lua_register_node(lua_State *L) {
 
 static const luaL_Reg vpplib[] = {
   {"register_node",   lua_register_node},
+  {"vnet_classify_get_main", lua_vnet_classify_get_main},
   {"vlib_get_main",   lua_vlib_get_main},
   {"vnet_get_main",   lua_vnet_get_main},
   {"get_packet_bytes", lua_get_packet_bytes},
@@ -377,6 +425,8 @@ static const luaL_Reg vpplib[] = {
   {"for_interfaces", lua_for_interfaces },
   {"get_rx_interface", lua_get_rx_interface},
   {"set_tx_interface", lua_set_tx_interface},
+  {"get_l2_opaque", lua_get_l2_opaque },
+  {"set_l2_opaque", lua_set_l2_opaque },
   {NULL, NULL}
 };
 
