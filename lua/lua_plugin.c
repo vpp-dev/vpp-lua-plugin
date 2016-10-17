@@ -606,7 +606,9 @@ lua_run_command_fn (vlib_main_t * vm,
 				  format_unformat_error, input);
   }
 
-  luaL_loadfile(L, (void *)lua_file_name); 
+  if (luaL_loadfile(L, (void *)lua_file_name)) {
+    return clib_error_return (0, "error loading %s: %s", lua_file_name, lua_tostring(L, -1));
+  }
   int ret = lua_pcall(L, 0, 0, 0);
   if (ret != 0) {
     return clib_error_return (0, "error running %s: %s", lua_file_name, lua_tostring(L, -1));
