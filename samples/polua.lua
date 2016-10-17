@@ -217,7 +217,6 @@ local DIR_OUT= 2
 
 function polua_print_cb(bi0)
   local sw_if_index = vpp.get_rx_interface(bi0)
-  -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
   print("PoLua PRINT callback, buffer index:", bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
   -- local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
@@ -308,8 +307,13 @@ end
 
 local proto_offset = { 23, 20 }
 
-function slowpath_sessions_add(bi0, ip_af, sw_if_index, direction)
+function get_packet_proto(bi0, ip_af)
   local proto =  string.byte(vpp.get_packet_bytes(bi0, proto_offset[ip_af]))
+  return proto
+end
+
+function slowpath_sessions_add(bi0, ip_af, sw_if_index, direction)
+  local proto =  get_packet_proto(bi0, ip_af)
   print("Protocol: " .. tostring(proto))
   local other_direction = ((direction == DIR_OUT) and DIR_IN) or DIR_OUT
   local ppi = polua.per_interface[sw_if_index][direction]
@@ -340,12 +344,17 @@ end
 
 function policy_permit(bi0, ip_af, sw_if_index, direction)
   local ppi = polua.per_interface[sw_if_index][direction]
+  local proto =  get_packet_proto(bi0, ip_af)
   local result = { }
   if ppi then
     if ppi.default_permit then
       result = { true, "Default permit"}
     else
-      result = { false, "Default deny"}
+      if ip_af == AF_IP6 and proto == 58 then
+        result = { true, "IPv6 permit ICMP6"}
+      else
+        result = { false, "Default deny"}
+      end
     end
   else
     result = { true, "No policy = permit" }
@@ -370,6 +379,7 @@ end
 function polua_ip4_output_cb(bi0)
   local sw_if_index = vpp.get_tx_interface(bi0)
   print("PoLua IP4 output callback, buffer index:", bi0)
+  print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
   print("TX interface: " .. tostring(sw_if_index))
   local next_slot = 0
   if policy_permit(bi0, AF_IP4, sw_if_index, DIR_OUT) then
