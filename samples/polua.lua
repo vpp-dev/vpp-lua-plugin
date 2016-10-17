@@ -490,10 +490,10 @@ function preconfig_polua(i)
 
   -- add the classifier nodes for recirculation
 
-  polua.classify_recirc_slots_ip4[i] = ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), polua.node_ip4_idxs[i], polua.node_classify_idxs[i], -1)
+  polua.classify_recirc_slots_ip4[i] = tonumber(ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), polua.node_ip4_idxs[i], polua.node_classify_idxs[i], -1))
   print("recirc Slot in " .. tostring(polua.node_ip4_idxs[i]) .. " for " .. tostring(polua.node_classify_idxs[i]) .. " is " .. tostring(polua.classify_recirc_slots_ip4[i]))
 
-  polua.classify_recirc_slots_ip6[i] = ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), polua.node_ip6_idxs[i], polua.node_classify_idxs[i], -1)
+  polua.classify_recirc_slots_ip6[i] = tonumber(ffi.C.vlib_node_add_next_with_slot(vpp.vlib_get_main(), polua.node_ip6_idxs[i], polua.node_classify_idxs[i], -1))
   print("recirc Slot in " .. tostring(polua.node_ip6_idxs[i]) .. " for " .. tostring(polua.node_classify_idxs[i]) .. " is " .. tostring(polua.classify_recirc_slots_ip6[i]))
 
 
