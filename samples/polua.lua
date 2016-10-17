@@ -258,18 +258,49 @@ function add_session(ppi, ip_af, proto, packet_data, recirc_slot)
 end
 
 function swap_l3l4_src_dst(bi0, ip_af, proto)
+  if false then
+    return nil
+  end
+  if ip_af == AF_IP4 then
+    local l3_src = vpp.get_packet_bytes(bi0, 26, 4)
+    local l3_dst = vpp.get_packet_bytes(bi0, 30, 4)
+    vpp.set_packet_bytes(bi0, 26, l3_dst)
+    vpp.set_packet_bytes(bi0, 30, l3_src)
+  elseif ip_af == AF_IP6 then
+    local l3_src = vpp.get_packet_bytes(bi0, 22, 16)
+    local l3_dst = vpp.get_packet_bytes(bi0, 38, 16)
+    vpp.set_packet_bytes(bi0, 22, l3_dst)
+    vpp.set_packet_bytes(bi0, 38, l3_src)
+  end
+
   if proto == 6 or proto == 17 then
     if ip_af == AF_IP4 then
-      local l3_src = vpp.get_packet_bytes(bi0, 26, 4)
-      local l3_dst = vpp.get_packet_bytes(bi0, 30, 4)
       local l4_src = vpp.get_packet_bytes(bi0, 34, 2)
       local l4_dst = vpp.get_packet_bytes(bi0, 36, 2)
-
-      vpp.set_packet_bytes(bi0, 26, l3_dst)
-      vpp.set_packet_bytes(bi0, 30, l3_src)
       vpp.set_packet_bytes(bi0, 34, l4_dst)
       vpp.set_packet_bytes(bi0, 36, l4_src)
-    else
+    elseif ip_af == AF_IP6 then
+      local l4_src = vpp.get_packet_bytes(bi0, 54, 2)
+      local l4_dst = vpp.get_packet_bytes(bi0, 56, 2)
+
+      vpp.set_packet_bytes(bi0, 54, l4_dst)
+      vpp.set_packet_bytes(bi0, 56, l4_src)
+    end
+  elseif proto == icmp_proto_value[ip_af] then
+    if ip_af == AF_IP4 then
+      local icmp_t = vpp.get_packet_bytes(bi0, 34, 1)
+      if icmp_t == string.char(0) then
+        vpp.set_packet_bytes(bi0, 34, string.char(8))
+      elseif icmp_t == string.char(8) then
+        vpp.set_packet_bytes(bi0, 34, string.char(0))
+      end
+    elseif ip_af == AF_IP6 then
+      local icmp_t = vpp.get_packet_bytes(bi0, 54, 1)
+      if icmp_t == string.char(128) then
+        vpp.set_packet_bytes(bi0, 54, string.char(129))
+      elseif icmp_t == string.char(129) then
+        vpp.set_packet_bytes(bi0, 54, string.char(128))
+      end
     end
   end
 end
