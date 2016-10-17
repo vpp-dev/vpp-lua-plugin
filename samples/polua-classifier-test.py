@@ -259,25 +259,36 @@ s1.read()
 s2.read()
 
 
-# create the interfaces on the VPP corresponding to the s0_s1 and s0_s2 interfaces
-vpp_if_to_s1 = v.af_packet_create("s0_s1", "AAAAAA", True)
-vpp_if_to_s2 = v.af_packet_create("s0_s2", "AAAAAA", True)
 
-ifaces = [ vpp_if_to_s1, vpp_if_to_s2 ]
+# create the VPP interfaces via CLI and add them to the bridge
 
-# bring the interfaces up
-for i in ifaces:
-  up = True
-  v.sw_interface_set_flags(i.sw_if_index, up, False, False)
+cli("create host-interface name s0_s1")
+cli("create host-interface name s0_s2")
+cli("set interface state host-s0_s1 up")
+cli("set interface state host-s0_s2 up")
+cli("set interface l2 bridge host-s0_s1 42")
+cli("set interface l2 bridge host-s0_s2 42")
 
-# Let's add the bridge
-bd_id = 42
-v.bridge_domain_add_del(bd_id, True, True, True, True, 0, True)
+if False:
+  # create the interfaces on the VPP corresponding to the s0_s1 and s0_s2 interfaces
+  vpp_if_to_s1 = v.af_packet_create("s0_s1", "AAAAAA", True)
+  vpp_if_to_s2 = v.af_packet_create("s0_s2", "AAAAAA", True)
 
-# Now lets add the interfaces to the bridge
-for i in ifaces:
-  sw_if_index = i.sw_if_index
-  v.sw_interface_set_l2_bridge(sw_if_index, bd_id, False, False, True)
+  ifaces = [ vpp_if_to_s1, vpp_if_to_s2 ]
+
+  # bring the interfaces up
+  for i in ifaces:
+    up = True
+    v.sw_interface_set_flags(i.sw_if_index, up, False, False)
+
+  # Let's add the bridge
+  bd_id = 42
+  v.bridge_domain_add_del(bd_id, True, True, True, True, 0, True)
+
+  # Now lets add the interfaces to the bridge
+  for i in ifaces:
+    sw_if_index = i.sw_if_index
+    v.sw_interface_set_l2_bridge(sw_if_index, bd_id, False, False, True)
 
 # ping!
 s1.write("ping6 -c 3 2001:db8:1::2\n")
@@ -318,72 +329,93 @@ minus_one = 4294967295
 # v.classify_add_del_session(False, 14, 5, 123, 0, '\x00\x00\x00\x00:\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
 # Put egress policy onto target-facing interface
-v.classify_set_interface_l2_tables(vpp_if_to_s2.sw_if_index, ip4_table_index, ip6_table_index, minus_one, False)
+# v.classify_set_interface_l2_tables(vpp_if_to_s2.sw_if_index, ip4_table_index, ip6_table_index, minus_one, False)
 # v.classify_set_interface_l2_tables(vpp_if_to_s1.sw_if_index, ip4_table_index, ip6_table_index, minus_one, True)
 # classify session hit-next -1 table-index 2 match l3 ip6 proto 58 opaque-index 123
 
-print("IPv6 ping with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("ping6 -c 3 2001:db8:1::2\n")
-time.sleep(10)
-cli("show trace max 1")
-time.sleep(1)
+cli("lua run plugins/lua-plugin/samples/polua.lua")
+cli("lua polua host-s0_s1 in permit")
+cli("lua polua host-s0_s2 in")
 
-print("IPv6 ping to another host with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("ping6 -c 3 2001:db8:1::3\n")
-time.sleep(10)
-cli("show trace max 1")
-time.sleep(1)
+testIPv6 = False
+testIPv4 = True
 
+if testIPv6:
 
+  print("IPv6 ping with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("ping6 -c 3 2001:db8:1::2\n")
+  time.sleep(10)
+  cli("show trace max 1")
+  time.sleep(1)
 
-print("IPv4 ping with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("ping -c 3 192.0.2.2\n")
-time.sleep(5)
-cli("show trace max 1")
+  print("IPv6 ping to another host with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("ping6 -c 3 2001:db8:1::3\n")
+  time.sleep(10)
+  cli("show trace max 1")
+  time.sleep(1)
 
-print("IPv4 udp with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("perl -e \"print('X' x 4000);\" >/tmp/test\n")
-s1.write("nc -u -w 1 192.0.2.2 4444 </tmp/test\n")
-time.sleep(5)
-cli("show trace max 1")
+if testIPv4:
+  print("IPv4 ping with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("ping -c 3 192.0.2.2\n")
+  time.sleep(5)
+  cli("show trace max 1")
 
-print("IPv4 slow udp with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("perl -e \"print('X' x 100);\" >/tmp/test\n")
-s1.write("nc -u -w 1 -p 5555 192.0.2.2 4444 </tmp/test\n")
-time.sleep(1)
-s1.write("nc -u -w 1 -p 5555 192.0.2.2 4444 </tmp/test\n")
-time.sleep(5)
-cli("show trace max 1")
+  print("IPv4 udp with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("perl -e \"print('X' x 4000);\" >/tmp/test\n")
+  s1.write("nc -u -w 1 192.0.2.2 4444 </tmp/test\n")
+  time.sleep(5)
+  cli("show trace max 1")
 
-print("IPv4 tcp port 3333 with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("nc -w 1 192.0.2.2 3333 </dev/zero\n")
-time.sleep(5)
-cli("show trace max 1")
+if True:
+  print("IPv4 slow udp with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("perl -e \"print('X' x 100);\" >/tmp/test\n")
+  s1.write("nc -u -w 1 -p 5554 192.0.2.2 4444 </tmp/test\n")
+  time.sleep(1)
+  s1.write("nc -u -w 1 -p 5554 192.0.2.2 4444 </tmp/test\n")
+  time.sleep(5)
+  cli("show trace max 1")
 
-print("IPv4 tcp port 22 with filter")
-cli("clear trace")
-cli("trace add af-packet-input 100")
-s1.write("nc -w 1 192.0.2.2 22 </dev/zero\n")
-time.sleep(5)
-cli("show trace max 1")
-time.sleep(1)
+if True:
+  print("IPv4 tcp port 3333 with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  # s2.write("nc -w 4 -l -p 3333\n")
+  s1.write("nc -w 1 192.0.2.2 3333 </dev/zero\n")
+  time.sleep(5)
+  cli("show trace max 1")
+
+if True:
+  print("IPv4 tcp port 3333 with filter in the other direction")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  # s2.write("nc -w 4 -l -p 3333\n")
+  s1.write("nc -w 1 192.0.2.2 3333 </dev/zero\n")
+  time.sleep(5)
+  cli("show trace max 1")
+
+if True:
+  print("IPv4 tcp port 22 with filter")
+  cli("clear trace")
+  cli("trace add af-packet-input 100")
+  s1.write("nc -w 1 192.0.2.2 22 </dev/zero\n")
+  time.sleep(5)
+  cli("show trace max 1")
+  time.sleep(1)
 
 
 # cancel the filters
-v.classify_set_interface_l2_tables(vpp_if_to_s2.sw_if_index, minus_one, minus_one, minus_one, False)
-v.classify_set_interface_l2_tables(vpp_if_to_s1.sw_if_index, minus_one, minus_one, minus_one, True)
+# v.classify_set_interface_l2_tables(vpp_if_to_s2.sw_if_index, minus_one, minus_one, minus_one, False)
+# v.classify_set_interface_l2_tables(vpp_if_to_s1.sw_if_index, minus_one, minus_one, minus_one, True)
 
 # 
 # Not supported yet in python API...
