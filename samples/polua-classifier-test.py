@@ -173,7 +173,13 @@ class ShellSession:
     self.fw = open(self.fname, "wb")
     self.fr = open(self.fname, "r")
     self.p = Popen("/bin/bash",  stdin = PIPE, stdout = self.fw, stderr = self.fw, bufsize = 1)
+    self.raw_write("export REAL_TMUX=`which tmux`\n")
+    self.raw_write("export PATH=/shared/runtmux:$PATH\n")
+    self.raw_write("runtmux new-session -d -s " + self.name + "\n")
   def write(self, data):
+    self.raw_write("tmux send-keys -t " + self.name + " '" + data + "'\n")
+    self.raw_write("tmux send-keys -t " + self.name + " Enter\n")
+  def raw_write(self, data):
     self.p.stdin.write(data)
   def read(self):
     return self.fr.read()
@@ -183,20 +189,19 @@ class ShellSession:
   def connect_with(self, other):
     this_end = self.name + "_" + other.name
     other_end =  other.name + "_" + self.name
+    self.write("ip link del " + this_end + "\n")
     self.write("ip link add name " + this_end + " type veth peer name " + other_end + "\n")
     self.write("ip link set dev " + this_end + " up promisc on\n")
-    other.write("echo $$\n")
+    other.write("echo $$ >/tmp/" + other.name + ".pid\n")
     time.sleep(0.5)
-    thepid = int(other.read())
-    self.write("ip link set dev " + other_end + " up promisc on netns /proc/"+str(thepid)+"/ns/net\n")
-    print("netns of " + other_end + " is /proc/"+str(thepid)+"/ns/net\n")
+    self.write("ip link set dev " + other_end + " up promisc on netns /proc/`cat /tmp/" + other.name + ".pid`/ns/net\n")
+    print("netns of " + other_end + " is /proc/`cat /tmp/"+other.name+".pid`/ns/net\n")
     time.sleep(0.3)
 
 
 
 # Three sessions, first s0 in the same net namespace as VPP
 s0 = ShellSession("s0")
-
 # s1 in its separate namespace and s2 in yet another one
 
 s1 = ShellSession("s1")
@@ -335,6 +340,7 @@ minus_one = 4294967295
 
 cli("lua run plugins/lua-plugin/samples/polua.lua")
 cli("lua polua host-s0_s1 in permit")
+cli("lua polua host-s0_s2 out permit")
 cli("lua polua host-s0_s2 in")
 
 testIPv6 = False
@@ -369,7 +375,7 @@ if testIPv4:
   print("IPv4 udp with filter")
   cli("clear trace")
   cli("trace add af-packet-input 100")
-  s1.write("perl -e \"print('X' x 4000);\" >/tmp/test\n")
+  s1.write("perl -e \"print(chr(65) x 4000);\" >/tmp/test\n")
   s1.write("nc -u -w 1 192.0.2.2 4444 </tmp/test\n")
   time.sleep(5)
   cli("show trace max 1")
@@ -378,7 +384,7 @@ if True:
   print("IPv4 slow udp with filter")
   cli("clear trace")
   cli("trace add af-packet-input 100")
-  s1.write("perl -e \"print('X' x 100);\" >/tmp/test\n")
+  s1.write("perl -e \"print(chr(65) x 100);\" >/tmp/test\n")
   s1.write("nc -u -w 1 -p 5554 192.0.2.2 4444 </tmp/test\n")
   time.sleep(1)
   s1.write("nc -u -w 1 -p 5554 192.0.2.2 4444 </tmp/test\n")
@@ -399,7 +405,7 @@ if True:
   cli("clear trace")
   cli("trace add af-packet-input 100")
   # s2.write("nc -w 4 -l -p 3333\n")
-  s1.write("nc -w 1 192.0.2.2 3333 </dev/zero\n")
+  s2.write("nc -w 1 192.0.2.1 3333 </dev/zero\n")
   time.sleep(5)
   cli("show trace max 1")
 
