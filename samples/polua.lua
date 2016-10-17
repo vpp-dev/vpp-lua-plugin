@@ -210,6 +210,11 @@ function vpp.api_message(id, data)
   return 42, "reply from polua"
 end
 
+local AF_IP4 = 1
+local AF_IP6 = 2
+local DIR_IN = 1
+local DIR_OUT= 2
+
 function polua_print_cb(bi0)
   local sw_if_index = vpp.get_rx_interface(bi0)
   -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
@@ -220,6 +225,7 @@ function polua_print_cb(bi0)
   hex_dump(txt)
 end
 
+local icmp_proto_value = { 1, 0x3a }
 function add_session(ppi, ip_af, proto, packet_data, recirc_slot)
   if proto == 6 or proto == 17 then
     local a_table_index = ppi.tcp_udp_tables[ip_af] -- ip4 table = 1, ip6 table = 2
@@ -234,7 +240,7 @@ function add_session(ppi, ip_af, proto, packet_data, recirc_slot)
     -- So the recirculation is the only sane way to deal with it ?
     print("Recirculate slot: ", recirc_slot)
     return recirc_slot
-  elseif proto == 1 then
+  elseif proto == icmp_proto_value[ip_af] then
     print("Need to add ICMP session")
     local a_table_index = ppi.icmp_tables[ip_af] -- ip4 table = 1, ip6 table = 2
     local a_match = packet_data
@@ -251,72 +257,120 @@ function add_session(ppi, ip_af, proto, packet_data, recirc_slot)
   end
 end
 
+function swap_l3l4_src_dst(bi0, ip_af, proto)
+  if proto == 6 or proto == 17 then
+    if ip_af == AF_IP4 then
+      local l3_src = vpp.get_packet_bytes(bi0, 26, 4)
+      local l3_dst = vpp.get_packet_bytes(bi0, 30, 4)
+      local l4_src = vpp.get_packet_bytes(bi0, 34, 2)
+      local l4_dst = vpp.get_packet_bytes(bi0, 36, 2)
+
+      vpp.set_packet_bytes(bi0, 26, l3_dst)
+      vpp.set_packet_bytes(bi0, 30, l3_src)
+      vpp.set_packet_bytes(bi0, 34, l4_dst)
+      vpp.set_packet_bytes(bi0, 36, l4_src)
+    else
+    end
+  end
+end
+
+
+local proto_offset = { 23, 20 }
+
+function slowpath_sessions_add(bi0, ip_af, sw_if_index, direction)
+  local proto =  string.byte(vpp.get_packet_bytes(bi0, proto_offset[ip_af]))
+  print("Protocol: " .. tostring(proto))
+  local other_direction = ((direction == DIR_OUT) and DIR_IN) or DIR_OUT
+  local ppi = polua.per_interface[sw_if_index][direction]
+  local ppi_reverse = polua.per_interface[sw_if_index][other_direction]
+  local recirc_slot = polua.classify_recirc_slots_by_af[ip_af][direction]
+  print("Recirc slot: " .. tostring(recirc_slot))
+  print("PPI: " .. tostring(ppi))
+  print("PPI reverse: " .. tostring(ppi_reverse))
+
+  swap_l3l4_src_dst(bi0, ip_af, proto) -- swap the src/dst in case we have a reverse session
+  local packet_data = vpp.get_packet_bytes(bi0, 0, 80)
+  if ppi_reverse then
+    print("Add reverse session")
+    add_session(ppi_reverse, ip_af, proto, packet_data, 0) -- 1 => IPv4
+  end
+
+  swap_l3l4_src_dst(bi0, ip_af, proto) -- get the src/dest back in the original order
+  packet_data = vpp.get_packet_bytes(bi0, 0, 80)
+
+  if ppi then
+    local next_slot = add_session(ppi, AF_IP4, proto, packet_data, recirc_slot) -- 1 => IPv4
+    print("Next slot: " .. tostring(next_slot))
+    return next_slot
+  else
+    return -1 -- just continue the processing
+  end
+end
+
+function policy_permit(bi0, ip_af, sw_if_index, direction)
+  local ppi = polua.per_interface[sw_if_index][direction]
+  local result = { }
+  if ppi then
+    if ppi.default_permit then
+      result = { true, "Default permit"}
+    else
+      result = { false, "Default deny"}
+    end
+  else
+    result = { true, "No policy = permit" }
+  end
+  print("Policy check result: " .. tostring(result[2]))
+  return result[1]
+end
 
 function polua_ip4_input_cb(bi0)
   local sw_if_index = vpp.get_rx_interface(bi0)
-  -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
   print("PoLua IP4 input callback, buffer index:", bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
   print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
-  -- local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
-  local txt = vpp.get_packet_bytes(bi0, 0, 64)
-  local proto = string.byte(vpp.get_packet_bytes(bi0, 23))
-  print("Protocol: " .. tostring(proto))
-  hex_dump(txt)
-
-  local ppi = polua.per_interface[sw_if_index][1]
-  local recirc_slot = polua.classify_recirc_slots_ip4[1] -- input
-  print("PPI: " .. tostring(ppi))
-  local next_slot = add_session(ppi, 1, proto, txt, recirc_slot) -- 1 => IPv4
-  print("Next slot: " .. tostring(next_slot))
+  local next_slot = 0
+  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_IN) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_IN)
+  end
+  print("------- next_slot: " .. tostring(next_slot))
   return next_slot
 end
 
 function polua_ip4_output_cb(bi0)
-  local sw_if_index = vpp.get_rx_interface(bi0)
-  local ppi = polua.per_interface[sw_if_index][2] -- output
-  local recirc_slot = polua.classify_recirc_slots_ip4[2] -- output
-  -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
+  local sw_if_index = vpp.get_tx_interface(bi0)
   print("PoLua IP4 output callback, buffer index:", bi0)
-  print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
-  print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
-  print("Recirc slot: " .. tostring(recirc_slot))
-
-  -- local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
-  -- local txt = vpp.get_packet_bytes(bi0, 0, 64)
-  local txt = vpp.get_packet_bytes(bi0, 0, 64)
-  hex_dump(txt)
-  local proto = string.byte(vpp.get_packet_bytes(bi0, 23))
-  print("Protocol: " .. tostring(proto))
-
+  print("TX interface: " .. tostring(sw_if_index))
+  local next_slot = 0
+  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_OUT) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_OUT)
+  end
+  print("------- next_slot: " .. tostring(next_slot))
+  return next_slot
 end
 
 function polua_ip6_input_cb(bi0)
-  -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
   local sw_if_index = vpp.get_rx_interface(bi0)
   print("PoLua IP6 input callback, buffer index:", bi0)
-  local proto = string.byte(vpp.get_packet_bytes(bi0, 20))
-  print("Protocol: " .. tostring(proto))
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
-  -- local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
-  local txt = vpp.get_packet_bytes(bi0, 0, 64)
-  hex_dump(txt)
-
-  local ppi = polua.per_interface[sw_if_index][1]
-  local recirc_slot = polua.classify_recirc_slots_ip6[1]
-
-  print("PPI: " .. tostring(ppi))
-  local next_slot = add_session(ppi, 2, proto, txt, recirc_slot) -- 1 => IPv6
-  print("Next slot: " .. tostring(next_slot))
+  print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
+  local next_slot = 0
+  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_IN) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_IN)
+  end
+  print("------- next_slot: " .. tostring(next_slot))
   return next_slot
 end
 
 function polua_ip6_output_cb(bi0)
-  -- vpp.set_tx_interface(bi0, vpp.get_rx_interface(bi0))
   print("PoLua IP6 output callback, buffer index:", bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
-  local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
-  hex_dump(txt)
+  print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
+  local next_slot = 0
+  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_OUT) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_OUT)
+  end
+  print("------- next_slot: " .. tostring(next_slot))
+  return next_slot
 end
 
 function set_classify_table_in(sw_if_index, ip4_table_index, ip6_table_index, other_table_index)
@@ -357,6 +411,7 @@ polua.classify_slots_print      = { -1, -1 }
 -- recirculation slots in ip4/ip6 callbacks for classifiers
 polua.classify_recirc_slots_ip4        = { -1, -1 }
 polua.classify_recirc_slots_ip6        = { -1, -1 }
+polua.classify_recirc_slots_by_af      = { polua.classify_recirc_slots_ip4, polua.classify_recirc_slots_ip6 }
 -- polua.fn_set_classify_tables   = { ffi.C.vnet_l2_input_classify_set_tables, ffi.C.vnet_l2_output_classify_set_tables }
 polua.fn_set_classify_tables   = { set_classify_table_in, set_classify_table_out }
 -- polua.fn_classify_enable_disable = { ffi.C.vnet_l2_input_classify_enable_disable, ffi.C.vnet_l2_output_classify_enable_disable }
@@ -504,7 +559,7 @@ function polua_ppi_config_policy(polua, ppi)
 end
 
 
-function polua_setup_inout(inout, sw_if_index, is_enable)
+function polua_setup_inout(inout, sw_if_index, is_enable, is_permit)
   if not polua.per_interface[sw_if_index] then
     polua.per_interface[sw_if_index] = {}
   end
@@ -515,6 +570,7 @@ function polua_setup_inout(inout, sw_if_index, is_enable)
        local ppi = {}
        ppi["sw_if_index"] = sw_if_index
        ppi["inout"] = inout
+       ppi["default_permit"] = is_permit
        local ret = polua_ppi_config_policy(polua, ppi, inout)
        if ret then 
          return ret
@@ -530,14 +586,16 @@ function polua_setup_inout(inout, sw_if_index, is_enable)
 end
 
 
-function polua_setup_in(sw_if_index, is_enable)
+function polua_setup_in(sw_if_index, is_enable, is_permit)
   print("PoLua setup IN for interface " .. tostring(sw_if_index) .. " is_enable: " .. tostring(is_enable))
-  return polua_setup_inout(1, sw_if_index, is_enable)
+  print("Default permit: " .. tostring(is_permit))
+  return polua_setup_inout(1, sw_if_index, is_enable, is_permit)
 end
 
-function polua_setup_out(sw_if_index, is_enable)
+function polua_setup_out(sw_if_index, is_enable, is_permit)
   print("PoLua setup OUT for interface " .. tostring(sw_if_index) .. " is_enable: " .. tostring(is_enable))
-  return polua_setup_inout(2, sw_if_index, is_enable)
+  print("Default permit: " .. tostring(is_permit))
+  return polua_setup_inout(2, sw_if_index, is_enable, is_permit)
 end
 
 function polua_setup_clean()
@@ -566,13 +624,14 @@ function vpp.CLI_lua_polua(cmd, input)
     if not is_in and not is_out then
       return "Need direction (in or out)"
     end
+    local is_permit = (1 == ffi.C.unformat(input, c_str("permit")))
     local is_enable = (1 ~= ffi.C.unformat(input, c_str("disable")))
     local swidx = sw_if_index[0]
     if is_in then
-      return polua_setup_in(swidx, is_enable)
+      return polua_setup_in(swidx, is_enable, is_permit)
     end
     if is_out then
-      return polua_setup_out(swidx, is_enable)
+      return polua_setup_out(swidx, is_enable, is_permit)
     end
   elseif (1 == ffi.C.unformat(input, c_str("clean"))) then
     polua_setup_clean()
@@ -597,7 +656,7 @@ function vpp.CLI_show_lua_polua(cmd, input)
     local inout_name = { "in", "out" }
     for i = 1,2 do
       if ppi[i] then
-        print("    [ " .. inout_name[i] .. " ]")
+        print("    [ " .. inout_name[i] .. " ] default permit: " .. tostring(ppi[i].default_permit))
         print("             TCP/UDP=> ip4table " .. tostring(ppi[i].tcp_udp_tables[1]) .. " ip6table    " .. tostring(ppi[i].tcp_udp_tables[2]))
         print("             ICMP   => ip4table " .. tostring(ppi[i].icmp_tables[1]) .. " ip6table    " .. tostring(ppi[i].icmp_tables[2]))
       end
