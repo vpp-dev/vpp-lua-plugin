@@ -323,14 +323,14 @@ function slowpath_sessions_add(bi0, ip_af, sw_if_index, direction)
   local packet_data = vpp.get_packet_bytes(bi0, 0, 80)
   if ppi_reverse then
     print("Add reverse session")
-    add_session(ppi_reverse, ip_af, proto, packet_data, 0) -- 1 => IPv4
+    add_session(ppi_reverse, ip_af, proto, packet_data, 0) -- 1 => IPv4, 2 => IPv6
   end
 
   swap_l3l4_src_dst(bi0, ip_af, proto) -- get the src/dest back in the original order
   packet_data = vpp.get_packet_bytes(bi0, 0, 80)
 
   if ppi then
-    local next_slot = add_session(ppi, AF_IP4, proto, packet_data, recirc_slot) -- 1 => IPv4
+    local next_slot = add_session(ppi, ip_af, proto, packet_data, recirc_slot) -- 1 => IPv4, 2=> IPv6
     print("Next slot: " .. tostring(next_slot))
     return next_slot
   else
@@ -385,20 +385,21 @@ function polua_ip6_input_cb(bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
   print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
   local next_slot = 0
-  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_IN) then
-    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_IN)
+  if policy_permit(bi0, AF_IP6, sw_if_index, DIR_IN) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP6, sw_if_index, DIR_IN)
   end
   print("------- next_slot: " .. tostring(next_slot))
   return next_slot
 end
 
 function polua_ip6_output_cb(bi0)
+  local sw_if_index = vpp.get_tx_interface(bi0)
   print("PoLua IP6 output callback, buffer index:", bi0)
-  print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
   print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
+  print("TX interface: " .. tostring(sw_if_index))
   local next_slot = 0
-  if policy_permit(bi0, AF_IP4, sw_if_index, DIR_OUT) then
-    next_slot = slowpath_sessions_add(bi0, AF_IP4, sw_if_index, DIR_OUT)
+  if policy_permit(bi0, AF_IP6, sw_if_index, DIR_OUT) then
+    next_slot = slowpath_sessions_add(bi0, AF_IP6, sw_if_index, DIR_OUT)
   end
   print("------- next_slot: " .. tostring(next_slot))
   return next_slot
