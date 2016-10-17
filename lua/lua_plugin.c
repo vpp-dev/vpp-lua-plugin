@@ -125,9 +125,6 @@ luaplugin_node_fn (vlib_main_t * vm,
           }
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
             luanode_trace_t *t =
