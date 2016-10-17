@@ -220,6 +220,37 @@ function polua_print_cb(bi0)
   hex_dump(txt)
 end
 
+function add_session(ppi, ip_af, proto, packet_data, recirc_slot)
+  if proto == 6 or proto == 17 then
+    local a_table_index = ppi.tcp_udp_tables[ip_af] -- ip4 table = 1, ip6 table = 2
+    local a_match = packet_data
+    local a_hit_next_index = 0xffffffff -- polua.classify_slots_print[1] -- print
+    local a_opaque_index = 42
+    local a_advance = 0
+    local a_is_add = 1
+    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
+    print("Result of adding session: ", tostring(ret))
+    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
+    -- So the recirculation is the only sane way to deal with it ?
+    print("Recirculate slot: ", recirc_slot)
+    return recirc_slot
+  elseif proto == 1 then
+    print("Need to add ICMP session")
+    local a_table_index = ppi.icmp_tables[ip_af] -- ip4 table = 1, ip6 table = 2
+    local a_match = packet_data
+    local a_hit_next_index = 0xffffffff -- polua.classify_slots_print[1] -- print
+    local a_opaque_index = 142
+    local a_advance = 0
+    local a_is_add = 1
+    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
+    print("Result of adding ICMP session: ", tostring(ret))
+    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
+    -- So the recirculation is the only sane way to deal with it ?
+    print("Recirculate slot: ", recirc_slot)
+    return recirc_slot
+  end
+end
+
 
 function polua_ip4_input_cb(bi0)
   local sw_if_index = vpp.get_rx_interface(bi0)
@@ -235,34 +266,10 @@ function polua_ip4_input_cb(bi0)
 
   local ppi = polua.per_interface[sw_if_index][1]
   local recirc_slot = polua.classify_recirc_slots_ip4[1] -- input
-  if proto == 6 or proto == 17 then
-    local a_table_index = ppi.tcp_udp_tables[1] -- ip4 table
-    local a_match = txt
-    local a_hit_next_index = 0xffffffff -- polua.classify_slots_print[1] -- print
-    local a_opaque_index = 42
-    local a_advance = 0
-    local a_is_add = 1
-    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
-    print("Result of adding session: ", tostring(ret))
-    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
-    -- So the recirculation is the only sane way to deal with it ?
-    print("Recirculate slot: ", recirc_slot)
-    return recirc_slot
-  elseif proto == 1 then
-    print("Need to add ICMP session")
-    local a_table_index = ppi.icmp_tables[1] -- ip4 table
-    local a_match = txt
-    local a_hit_next_index = 0xffffffff -- polua.classify_slots_print[1] -- print
-    local a_opaque_index = 142
-    local a_advance = 0
-    local a_is_add = 1
-    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
-    print("Result of adding ICMP session: ", tostring(ret))
-    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
-    -- So the recirculation is the only sane way to deal with it ?
-    print("Recirculate slot: ", recirc_slot)
-    return recirc_slot
-  end
+  print("PPI: " .. tostring(ppi))
+  local next_slot = add_session(ppi, 1, proto, txt, recirc_slot) -- 1 => IPv4
+  print("Next slot: " .. tostring(next_slot))
+  return next_slot
 end
 
 function polua_ip4_output_cb(bi0)
@@ -273,6 +280,7 @@ function polua_ip4_output_cb(bi0)
   print("PoLua IP4 output callback, buffer index:", bi0)
   print("RX interface: " .. tostring(vpp.get_rx_interface(bi0)))
   print("L2 opaque: " .. tostring(vpp.get_l2_opaque(bi0)))
+  print("Recirc slot: " .. tostring(recirc_slot))
 
   -- local txt = vpp.get_packet_bytes(bi0, 0) -- , 64)
   -- local txt = vpp.get_packet_bytes(bi0, 0, 64)
@@ -297,36 +305,10 @@ function polua_ip6_input_cb(bi0)
   local ppi = polua.per_interface[sw_if_index][1]
   local recirc_slot = polua.classify_recirc_slots_ip6[1]
 
-  if proto == 6 or proto == 17 then
-    local a_table_index = ppi.tcp_udp_tables[2] -- ip6 table
-    local a_match = txt
-    local a_hit_next_index = -1
-    local a_opaque_index = 43
-    local a_advance = 0
-    local a_is_add = 1
-    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
-    print("Result of adding session: ", tostring(ret))
-    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
-    -- So the recirculation is the only sane way to deal with it ?
-    print("Recirculate slot: ", recirc_slot)
-    return recirc_slot
-  elseif proto == 0x3a then
-    print("Need to add ICMP6 session")
-    local a_table_index = ppi.icmp_tables[2] -- ip6 table
-    local a_match = txt
-    local a_hit_next_index = 0xffffffff -- polua.classify_slots_print[1] -- print
-    local a_opaque_index = 143
-    local a_advance = 0
-    local a_is_add = 1
-    local ret = classify_add_del_session(a_table_index, a_match, a_hit_next_index, a_opaque_index, a_advance, a_is_add)
-    print("Result of adding ICMP6 session: ", tostring(ret))
-    -- GOTCHA: if there is a train of the packets in the vector, then they will all arrive here.
-    -- So the recirculation is the only sane way to deal with it ?
-    print("Recirculate slot: ", recirc_slot)
-    return recirc_slot
-
-  end
-
+  print("PPI: " .. tostring(ppi))
+  local next_slot = add_session(ppi, 2, proto, txt, recirc_slot) -- 1 => IPv6
+  print("Next slot: " .. tostring(next_slot))
+  return next_slot
 end
 
 function polua_ip6_output_cb(bi0)
