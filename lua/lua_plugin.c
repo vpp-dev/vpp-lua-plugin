@@ -261,6 +261,17 @@ static int lua_get_rx_interface(lua_State *L) {
   return 1;
 }
 
+static int lua_get_tx_interface(lua_State *L) {
+  /* arguments: bi0 */
+  vlib_main_t *vm = vlib_get_main ();
+  vlib_buffer_t * b0;
+
+  u32 bi0 = luaL_checknumber(L, 1);
+  b0 = vlib_get_buffer (vm, bi0);
+  lua_pushnumber(L, vnet_buffer(b0)->sw_if_index[VLIB_TX]);
+  return 1;
+}
+
 static int lua_set_tx_interface(lua_State *L) {
   /* arguments: bi0, swidx */
   vlib_main_t *vm = vlib_get_main ();
@@ -424,6 +435,7 @@ static const luaL_Reg vpplib[] = {
   {"vlib_buffer_advance", lua_vlib_buffer_advance },
   {"for_interfaces", lua_for_interfaces },
   {"get_rx_interface", lua_get_rx_interface},
+  {"get_tx_interface", lua_get_tx_interface},
   {"set_tx_interface", lua_set_tx_interface},
   {"get_l2_opaque", lua_get_l2_opaque },
   {"set_l2_opaque", lua_set_l2_opaque },
