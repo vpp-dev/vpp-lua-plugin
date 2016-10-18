@@ -123,6 +123,7 @@ void pneum_data_free(char *data);
   vpp.msg_name_to_number = {}
   vpp.msg_name_to_fields = {}
   vpp.msg_number_to_name = {}
+  vpp.msg_number_to_pointer_type = {}
   vpp.events = {}
 
   vpp.accessors = {}
@@ -234,6 +235,7 @@ function vpp.consume_api(vpp, path)
 	vpp.next_msg_num = vpp.next_msg_num + 1
 	vpp.msg_name_to_number[name] = this_message_number
 	vpp.msg_number_to_name[this_message_number] = name
+	vpp.msg_number_to_pointer_type[this_message_number] = "vl_api_" .. name .. "_t *"
 	onedef = onedef .. "\n\n enum { vl_msg_" .. name .. " = " .. this_message_number .. " };\n\n"
       end
       table.insert(ffii, onedef);
@@ -244,25 +246,22 @@ function vpp.consume_api(vpp, path)
     ffi.cdef(cdef)
   end
 
-function vpp.api_write(vpp, api_name, req_table_arg)
+local req_store_cache = ffi.new("vl_api_opaque_message_t[1]")
+
+function vpp.api_write(vpp, api_name, req_table)
     local msg_num = vpp.msg_name_to_number[api_name]
     if not msg_num then
       print ("API call "..api_name.." is not known")
       return nil
     end
-    local req_table = {}
 
-    local req_type = "vl_api_" .. api_name .. "_t"
-
-    local reqstore = ffi.new("vl_api_opaque_message_t[1]")
-
-    local reqptr = ffi.cast(req_type .. "*", reqstore) -- ffi.new(req_type .. "[1]")
+    local reqptr = ffi.cast(vpp.msg_number_to_pointer_type[msg_num], req_store_cache)
     local req = reqptr[0]
     local additional_len = 0 -- for the variable length field at the end of the message
 
     req._vl_msg_id = ffi.C.htons(msg_num).u16;
-    if req_table_arg then
-      req_table = req_table_arg
+    if not req_table then
+      req_table = {}
     end
     for k,v in pairs(req_table) do 
       local field = vpp.msg_name_to_fields[api_name][k]
@@ -293,11 +292,13 @@ function vpp.api_write(vpp, api_name, req_table_arg)
     -- print("write res:", res)
   end
 
+local rep_store_cache = ffi.new("vl_api_opaque_message_t *[1]")
+local rep_len_cache = ffi.new("int[1]")
+
 function vpp.api_read(vpp)
     local rep_type = "vl_api_opaque_message_t"
-    local rep = ffi.new(rep_type .. ' *[1]')
-    local replen = ffi.new("int[1]")
-    local out = {}
+    local rep = rep_store_cache
+    local replen = rep_len_cache
     -- print("Before read")
     res = vpp.pneum.pneum_read(ffi.cast("void *", rep), replen)
 
@@ -305,39 +306,41 @@ function vpp.api_read(vpp)
     --print("Length: ", replen[0])
     local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id).u16
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
+    local out = { luaapi_message_name = reply_msg_name, luaapi_message_number = reply_msg_num }
     -- hex_dump(ffi.string(rep[0], replen[0]))
     -- print("L7 result:", ffi.C.ntohl(rep[0].retval))
-    local result_bytes =  ffi.string(rep[0], replen[0])
     -- print("Just before data free")
-    local reply_typed_ptr = ffi.cast("vl_api_" .. reply_msg_name .. "_t *", rep[0])
+    local reply_typed_ptr = ffi.cast(vpp.msg_number_to_pointer_type[reply_msg_num], rep[0])
     for k, v in pairs(vpp.msg_name_to_fields[reply_msg_name]) do
-      if v.accessors and v.accessors.c2lua then
+      local v_c2lua = v.accessors and v.accessors.c2lua
+      if v_c2lua then
         local len = v.array
-        out[k] =  v.accessors.c2lua(reply_typed_ptr[k]) 
+        out[k] =  v_c2lua(reply_typed_ptr[k])
         -- print(dump(v))
         if len then
-          local len_field = vpp.msg_name_to_fields[reply_msg_name][k .. "_length"]
+          local len_field_name = k .. "_length"
+          local len_field = vpp.msg_name_to_fields[reply_msg_name][len_field_name]
           if (len_field) then
-            local real_len = len_field.accessors.c2lua(reply_typed_ptr[k .. "_length"])
-            out[k] =  v.accessors.c2lua(reply_typed_ptr[k], real_len) 
+            local real_len = len_field.accessors.c2lua(reply_typed_ptr[len_field_name])
+            out[k] =  v_c2lua(reply_typed_ptr[k], real_len)
           elseif len == 0 then
             -- check if len = 0, then must be a field which contains the size
             len_field =  vpp.msg_name_to_fields[reply_msg_name][v.array_size]
             local real_len = len_field.accessors.c2lua(reply_typed_ptr[v.array_size])
-            out[k] =  v.accessors.c2lua(reply_typed_ptr[k], real_len) 
+            out[k] = v_c2lua(reply_typed_ptr[k], real_len)
+          else
+            -- alas, just stuff the entire array
+            out[k] = v_c2lua(reply_typed_ptr[k], len)
           end
-          out["luaapi_" .. k .. "_full"] = v.accessors.c2lua(reply_typed_ptr[k], len)
         end
       else
         out[k] = "<no accessor function>"
       end
       -- print(k, out[k])
     end
-    out.luaapi_message_name = reply_msg_name
-    out.luaapi_message_number = reply_msg_num
     vpp.pneum.pneum_data_free(ffi.cast('void *',rep[0]))
     -- print("Just after data free")
-    return reply_msg_name, out, result_bytes
+    return reply_msg_name, out -- , result_bytes are gone for now
   end
 
 function vpp.api_call(vpp, api_name, req_table, options_in)
@@ -354,7 +357,7 @@ function vpp.api_call(vpp, api_name, req_table, options_in)
       end
       repeat 
         reply_message_name, reply = vpp:api_read()
-        if not reply.context then
+        if reply and not reply.context then
           -- there may be async events inbetween
           table.insert(vpp.events, reply)
         else
