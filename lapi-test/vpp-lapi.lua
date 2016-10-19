@@ -58,10 +58,10 @@ typedef union {
   i32 i32;
 } lua_ui32t;
 
-lua_ui16t htons(uint16_t hostshort);
-lua_ui16t ntohs(uint16_t hostshort);
-lua_ui32t htonl(uint32_t along);
-lua_ui32t ntohl(uint32_t along);
+u16 ntohs(uint16_t hostshort);
+u16 htons(uint16_t hostshort);
+u32 htonl(uint32_t along);
+u32 ntohl(uint32_t along);
 
 #pragma pack(1)
 typedef struct _vl_api_opaque_message {
@@ -131,11 +131,11 @@ void pneum_data_free(char *data);
   vpp.accessors["u64"].lua2c = function(luaval) return luaval end -- FIXME
   vpp.accessors["u64"].c2lua = function(cval) return cval end -- FIXME
   vpp.accessors["u32"] = {}
-  vpp.accessors["u32"].lua2c = function(luaval) return ffi.C.htonl(luaval).u32 end
-  vpp.accessors["u32"].c2lua = function(cval) return ffi.C.ntohl(cval).u32 end
+  vpp.accessors["u32"].lua2c = function(luaval) return ffi.C.htonl(luaval) end
+  vpp.accessors["u32"].c2lua = function(cval) return ffi.C.ntohl(cval) end
   vpp.accessors["u16"] = {}
-  vpp.accessors["u16"].lua2c = function(luaval) return ffi.C.htons(luaval).u16 end
-  vpp.accessors["u16"].c2lua = function(cval) return ffi.C.ntohs(cval).u16 end
+  vpp.accessors["u16"].lua2c = function(luaval) return ffi.C.htons(luaval) end
+  vpp.accessors["u16"].c2lua = function(cval) return ffi.C.ntohs(cval) end
   vpp.accessors["u8"] = {}
   vpp.accessors["u8"].lua2c = function(luaval) return luaval end
   vpp.accessors["u8"].c2lua = function(cval) return cval end
@@ -144,8 +144,16 @@ void pneum_data_free(char *data);
   vpp.accessors["i64"].lua2c = function(luaval) return luaval end -- FIXME
   vpp.accessors["i64"].c2lua = function(cval) return cval end -- FIXME
   vpp.accessors["i32"] = {}
-  vpp.accessors["i32"].lua2c = function(luaval) return ffi.C.htonl(ffi.cast('u32'),luaval).i32 end
-  vpp.accessors["i32"].c2lua = function(cval) return ffi.C.ntohl(ffi.cast('u32', cval)).i32 end
+  vpp.accessors["i32"].lua2c = function(luaval)
+      return ffi.cast("i32", ffi.C.htonl(ffi.cast('u32'),luaval))
+  end
+  vpp.accessors["i32"].c2lua = function(cval)
+      -- just performing the computation in a single shot does not work...
+      local u32val = ffi.cast("u32", cval)
+      local ntohl = (ffi.C.ntohl(u32val))
+      local out = tonumber(ffi.cast("i32", ntohl + 0LL))
+      return out
+  end
   vpp.accessors["i16"] = {}
   vpp.accessors["i16"].lua2c = function(luaval) return luaval end
   vpp.accessors["i16"].c2lua = function(cval) return cval end
@@ -154,7 +162,13 @@ void pneum_data_free(char *data);
   vpp.accessors["i8"].c2lua = function(cval) return cval end
   vpp.accessors["_string_"] = {}
   vpp.accessors["_string_"].lua2c = function(luaval) return vpp.c_str(luaval) end
-  vpp.accessors["_string_"].c2lua = function(cval, len) return len and ffi.string(cval, len) or ffi.string(cval) end
+  vpp.accessors["_string_"].c2lua = function(cval, len)
+      if len then
+        return ffi.string(cval, len)
+      else
+        return ffi.string(cval)
+      end
+  end
   vpp.accessors["_message_"] = {}
   vpp.accessors["_message_"].lua2c = function(luaval)
     return luaval
@@ -259,7 +273,7 @@ function vpp.api_write(vpp, api_name, req_table)
     local req = reqptr[0]
     local additional_len = 0 -- for the variable length field at the end of the message
 
-    req._vl_msg_id = ffi.C.htons(msg_num).u16;
+    req._vl_msg_id = ffi.C.htons(msg_num)
     if not req_table then
       req_table = {}
     end
@@ -304,7 +318,7 @@ function vpp.api_read(vpp)
 
     --print("read:", res)
     --print("Length: ", replen[0])
-    local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id).u16
+    local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id)
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
     local out = { luaapi_message_name = reply_msg_name, luaapi_message_number = reply_msg_num }
     -- hex_dump(ffi.string(rep[0], replen[0]))
