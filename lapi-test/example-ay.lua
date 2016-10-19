@@ -56,26 +56,9 @@ data = "asdfg"
 reply = vpp:api_call("lua_plugin_cmd", { submsg_id = 32, submsg_data = data, submsg_data_length = #data }, { force_ping = true } )
 print(vpp.dump(reply))
 
--- print(reply[1].program)
-os.exit(1)
-
-print("About to start cycle")
-
-count = 1
-for i = 1,100000 do
-  -- print(i)
-  vpp:api_call("show_version")
-  count = count + 1
-  -- print(i, "done")
-end
-print (count)
--- vpp:api_write("sw_interface_dump", { context = 42 } )
---[[
-replies = vpp:api_call("get_first_msg_id", { name = "snat_93f810b9" } )
-hex_dump(replies[1])
-replies = vpp:api_call("get_first_msg_id", { name = "ioam_export_eb694f98" } )
-hex_dump(replies[1])
-]]
+reply = vpp:api_call("classify_table_ids", { context = 42 })
+print(vpp.dump(reply))
+print("---")
 
 vpp:disconnect()
 

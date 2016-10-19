@@ -123,60 +123,202 @@ void pneum_data_free(char *data);
   vpp.msg_name_to_number = {}
   vpp.msg_name_to_fields = {}
   vpp.msg_number_to_name = {}
+  vpp.msg_number_to_type = {}
   vpp.msg_number_to_pointer_type = {}
+  vpp.c_type_to_fields = {}
   vpp.events = {}
 
-  vpp.accessors = {}
-  vpp.accessors["u64"] = {}
-  vpp.accessors["u64"].lua2c = function(luaval) return luaval end -- FIXME
-  vpp.accessors["u64"].c2lua = function(cval) return cval end -- FIXME
-  vpp.accessors["u32"] = {}
-  vpp.accessors["u32"].lua2c = function(luaval) return ffi.C.htonl(luaval) end
-  vpp.accessors["u32"].c2lua = function(cval) return ffi.C.ntohl(cval) end
-  vpp.accessors["u16"] = {}
-  vpp.accessors["u16"].lua2c = function(luaval) return ffi.C.htons(luaval) end
-  vpp.accessors["u16"].c2lua = function(cval) return ffi.C.ntohs(cval) end
-  vpp.accessors["u8"] = {}
-  vpp.accessors["u8"].lua2c = function(luaval) return luaval end
-  vpp.accessors["u8"].c2lua = function(cval) return cval end
 
-  vpp.accessors["i64"] = {}
-  vpp.accessors["i64"].lua2c = function(luaval) return luaval end -- FIXME
-  vpp.accessors["i64"].c2lua = function(cval) return cval end -- FIXME
-  vpp.accessors["i32"] = {}
-  vpp.accessors["i32"].lua2c = function(luaval)
-      return ffi.cast("i32", ffi.C.htonl(ffi.cast('u32'),luaval))
-  end
-  vpp.accessors["i32"].c2lua = function(cval)
-      -- just performing the computation in a single shot does not work...
-      local u32val = ffi.cast("u32", cval)
-      local ntohl = (ffi.C.ntohl(u32val))
-      local out = tonumber(ffi.cast("i32", ntohl + 0LL))
-      return out
-  end
-  vpp.accessors["i16"] = {}
-  vpp.accessors["i16"].lua2c = function(luaval) return luaval end
-  vpp.accessors["i16"].c2lua = function(cval) return cval end
-  vpp.accessors["i8"] = {}
-  vpp.accessors["i8"].lua2c = function(luaval) return luaval end
-  vpp.accessors["i8"].c2lua = function(cval) return cval end
-  vpp.accessors["_string_"] = {}
-  vpp.accessors["_string_"].lua2c = function(luaval) return vpp.c_str(luaval) end
-  vpp.accessors["_string_"].c2lua = function(cval, len)
-      if len then
-        return ffi.string(cval, len)
-      else
-        return ffi.string(cval)
+  vpp.t_lua2c = {}
+  vpp.t_c2lua = {}
+  vpp.t_lua2c["u8"] = function(c_type, src, dst_c_ptr)
+    if type(src) == "string" then
+      ffi.copy(dst_c_ptr, src)
+      return(#src)
+    elseif type(src) == "table" then
+      for i,v in ipairs(src) do
+        ffi.cast("u8 *", dst_c_ptr)[i-1] = v
       end
+      return(#src)
+    else
+      return 1, ffi.cast("u8", src)
+    end
   end
-  vpp.accessors["_message_"] = {}
-  vpp.accessors["_message_"].lua2c = function(luaval)
-    return luaval
-  end
-  vpp.accessors["_message_"].c2lua = function(cval)
-    return cval
+  vpp.t_c2lua["u8"] = function(c_type, src_ptr, src_len)
+    if src_len then
+      return ffi.string(src_ptr, src_len)
+    else
+      return (tonumber(src_ptr))
+    end
   end
 
+  vpp.t_lua2c["u16"] = function(c_type, src, dst_c_ptr)
+    if type(src) == "table" then
+      for i,v in ipairs(src) do
+        ffi.cast("u16 *", dst_c_ptr)[i-1] = ffi.C.htons(v)
+      end
+      return(2 * #src)
+    else
+      return 2, (ffi.C.htons(src))
+    end
+  end
+  vpp.t_c2lua["u16"] = function(c_type, src_ptr, src_len)
+    if src_len then
+      local out = {}
+      for i = 0,src_len-1 do
+        out[i+1] = tonumber(ffi.C.ntohs(src_ptr[i]))
+      end
+    else
+      return (tonumber(ffi.C.ntohs(src_ptr)))
+    end
+  end
+
+  vpp.t_lua2c["u32"] = function(c_type, src, dst_c_ptr)
+    if type(src) == "table" then
+      for i,v in ipairs(src) do
+        ffi.cast("u32 *", dst_c_ptr)[i-1] = ffi.C.htonl(v)
+      end
+      return(4 * #src)
+    else
+      return 4, (ffi.C.htonl(src))
+    end
+  end
+  vpp.t_c2lua["u32"] = function(c_type, src_ptr, src_len)
+    if src_len then
+      local out = {}
+      for i = 0,src_len-1 do
+        out[i+1] = tonumber(ffi.C.ntohl(src_ptr[i]))
+      end
+      return out
+    else
+      return (tonumber(ffi.C.ntohl(src_ptr)))
+    end
+  end
+  vpp.t_lua2c["i32"] = function(c_type, src, dst_c_ptr)
+    if type(src) == "table" then
+      for i,v in ipairs(src) do
+        ffi.cast("i32 *", dst_c_ptr)[i-1] = ffi.C.htonl(v)
+      end
+      return(4 * #src)
+    else
+      return 4, (ffi.C.htonl(src))
+    end
+  end
+  vpp.t_c2lua["i32"] = function(c_type, src_ptr, src_len)
+    local ntohl = function(src)
+      local u32val = ffi.cast("u32", src)
+      local ntohlval = (ffi.C.ntohl(u32val))
+      local out = tonumber(ffi.cast("i32", ntohlval + 0LL))
+      return out
+    end
+    if src_len then
+      local out = {}
+      for i = 0,src_len-1 do
+        out[i+1] = tonumber(ntohl(src_ptr[i]))
+      end
+    else
+      return (tonumber(ntohl(src_ptr)))
+    end
+  end
+
+  vpp.t_lua2c["u64"] = function(c_type, src, dst_c_ptr)
+    if type(src) == "table" then
+      for i,v in ipairs(src) do
+        ffi.cast("u64 *", dst_c_ptr)[i-1] = v --- FIXME ENDIAN
+      end
+      return(8 * #src)
+    else
+      return 8, ffi.cast("u64", src) --- FIXME ENDIAN
+    end
+  end
+  vpp.t_c2lua["u64"] = function(c_type, src_ptr, src_len)
+    if src_len then
+      local out = {}
+      for i = 0,src_len-1 do
+        out[i+1] = tonumber(src_ptr[i]) -- FIXME ENDIAN
+      end
+    else
+      return (tonumber(src_ptr)) --FIXME ENDIAN
+    end
+  end
+
+
+
+
+  vpp.t_lua2c["__MSG__"] = function(c_type, src, dst_c_ptr)
+    local dst = ffi.cast(c_type .. " *", dst_c_ptr)
+    local additional_len = 0
+    local fields_info = vpp.c_type_to_fields[c_type]
+    -- print("__MSG__ type: " .. tostring(c_type))
+    -- print(vpp.dump(fields_info))
+
+    for k,v in pairs(src) do
+      local field = fields_info[k]
+      local lua2c = vpp.t_lua2c[field.c_type]
+      -- print("__MSG__ field " .. tostring(k) .. " : " .. vpp.dump(field))
+      -- if the field is not an array type, try to coerce the argument to a number
+      if not field.array and type(v) == "string" then
+        v = tonumber(v)
+      end
+      if not lua2c then
+        print("__MSG__ " .. tostring(c_type) .. " t_lua2c: can not store field " .. field.name ..
+              " type " .. field.c_type .. " dst " .. tostring(dst[k]))
+        return 0
+      end
+      local len, val = lua2c(field.c_type, v, dst[k])
+      if not field.array then
+        dst[k] = val
+      else
+        if 0 == field.array then
+          additional_len = additional_len + len
+          -- If there is a variable storing the length
+          -- and the input table does not set it, do magic
+          if field.array_size and not src[field.array_size] then
+            local size_field = fields_info[field.array_size]
+            if size_field then
+              dst[field.array_size] = size_field.accessors.lua2c(len)
+            end
+          end
+        end
+      end
+    end
+    return (ffi.sizeof(dst[0])+additional_len)
+  end
+
+  vpp.t_c2lua["__MSG__"] = function(c_type, src_ptr, src_len)
+    local out = {}
+    local reply_typed_ptr = ffi.cast(c_type .. " *", src_ptr)
+    local field_desc = vpp.c_type_to_fields[c_type]
+    for k, v in pairs(field_desc) do
+      local v_c2lua = vpp.t_c2lua[v.c_type]
+      if v_c2lua then
+        local len = v.array
+        -- print(dump(v))
+        if len then
+          local len_field_name = k .. "_length"
+          local len_field = field_desc[len_field_name]
+          if (len_field) then
+            local real_len = vpp.t_c2lua[len_field.c_type](len_field.c_type, reply_typed_ptr[len_field_name])
+            out[k] =  v_c2lua(v.c_type, reply_typed_ptr[k], real_len)
+          elseif len == 0 then
+            -- check if len = 0, then must be a field which contains the size
+            len_field =  field_desc[v.array_size]
+            local real_len = vpp.t_c2lua[len_field.c_type](len_field.c_type, reply_typed_ptr[v.array_size])
+            out[k] = v_c2lua(v.c_type, reply_typed_ptr[k], real_len)
+          else
+            -- alas, just stuff the entire array
+            out[k] = v_c2lua(v.c_type, reply_typed_ptr[k], len)
+          end
+        else
+          out[k] =  v_c2lua(v.c_type, reply_typed_ptr[k])
+        end
+      else
+        out[k] = "<no accessor function for type " .. tostring(v.c_type) .. ">"
+      end
+      -- print(k, out[k])
+    end
+    return out
+  end
 end
 
 function vpp.connect(vpp, client_name)
@@ -192,7 +334,7 @@ function vpp.disconnect(vpp)
   end
 
 function vpp.consume_api(vpp, path)
-    print("Consuming the VPP api from "..path)
+    -- print("Consuming the VPP api from "..path)
     local ffii = {}
     local f = io.open(path, "r")
     if not f then
@@ -200,16 +342,25 @@ function vpp.consume_api(vpp, path)
       return nil
     end
     local data = f:read("*all")
-    print ("data len: ", #data)
-    data = data:gsub("\n(.-)(%S+)%s*{([^}]*)}", function (preamble, name, members) 
+    -- Remove all C comments
+    data = data:gsub("/%*.-%*/", "")
+    -- print ("data len: ", #data)
+    data = data:gsub("\n(.-)(%S+)%s*{([^}]*)}", function (preamble, name, members)
       local onedef = "\n\n#pragma pack(1)\ntypedef struct _vl_api_"..name.. " {\n" ..
 	   "   u16 _vl_msg_id;" ..
 	   members:gsub("%[[a-zA-Z_]+]", "[0]") ..
 	   "} vl_api_" .. name .. "_t;"
 
+      local c_type = "vl_api_" .. name .. "_t"
 
       local fields = {}
-      vpp.msg_name_to_fields[name] = fields
+      -- vpp.msg_name_to_fields[name] = fields
+      -- print("CTYPE " .. c_type)
+      vpp.c_type_to_fields[c_type] = fields
+      vpp.t_lua2c[c_type] = vpp.t_lua2c["__MSG__"]
+      vpp.t_c2lua[c_type] = vpp.t_c2lua["__MSG__"]
+      local mirec = { name = "_vl_msg_id", c_type = "u16", array = nil, array_size = nil }
+      fields[mirec.name] = mirec
 
       -- populate the field reflection table for the message
       -- sets the various type information as well as the accessors for lua<->C conversion
@@ -217,48 +368,69 @@ function vpp.consume_api(vpp, path)
           local fieldcount = nil
           local fieldcountvar = nil
           -- data = data:gsub("%[[a-zA-Z_]+]", "[0]")
-          fieldname = fieldname:gsub("(%b[])", function(cnt) 
+          fieldname = fieldname:gsub("(%b[])", function(cnt)
               fieldcount = tonumber(cnt:sub(2, -2));
               if not fieldcount then
                 fieldcount = 0
                 fieldcountvar = cnt:sub(2, -2)
               end
-              return "" 
+              return ""
             end)
-	  local fieldrec = { name = fieldname, ctype = fieldtype, array = fieldcount, array_size = fieldcountvar }
-          if fieldcount then 
+	  local fieldrec = { name = fieldname, c_type = fieldtype, array = fieldcount, array_size = fieldcountvar }
+          if fieldcount then
             if fieldtype == "u8" then
               -- any array of bytes is treated as a string
-              fieldrec.accessors = vpp.accessors["_string_"]
+            elseif vpp.t_lua2c[fieldtype] then
+              -- print("Array of " .. fieldtype .. " is ok!")
             else
-              print(name,  " : " , fieldname, " : ", fieldtype, ":", fieldcount, ":", fieldcountvar)
-              fieldrec.accessors = vpp.accessors["_unknown_type_"]
+              print("Unknown array type: ", name,  " : " , fieldname, " : ", fieldtype, ":", fieldcount, ":", fieldcountvar)
             end
-          else
-            -- Just use the respective type's accessors
-            fieldrec.accessors = vpp.accessors[fieldtype]
           end
 	  fields[fieldname] = fieldrec
 	end)
 
       -- print(dump(fields))
-    
+
       local _, typeonly = preamble:gsub("typeonly", "")
       if typeonly == 0 then
 	local this_message_number = vpp.next_msg_num
 	vpp.next_msg_num = vpp.next_msg_num + 1
 	vpp.msg_name_to_number[name] = this_message_number
 	vpp.msg_number_to_name[this_message_number] = name
-	vpp.msg_number_to_pointer_type[this_message_number] = "vl_api_" .. name .. "_t *"
+	vpp.msg_number_to_type[this_message_number] = "vl_api_" .. name .. "_t"
+	vpp.msg_number_to_pointer_type[this_message_number] = vpp.msg_number_to_type[this_message_number] .. " *"
 	onedef = onedef .. "\n\n enum { vl_msg_" .. name .. " = " .. this_message_number .. " };\n\n"
       end
       table.insert(ffii, onedef);
-      return ""; 
+      return "";
       end)
     local cdef = table.concat(ffii)
     -- print(cdef)
     ffi.cdef(cdef)
   end
+
+
+function vpp.lua2c(vpp, c_type, src, dst_c_ptr)
+  -- returns the number of bytes written to memory pointed by dst
+  local lua2c = vpp.t_lua2c[c_type]
+  if lua2c then
+    return(lua2c(c_type, src, dst_c_ptr))
+  else
+    print("vpp.lua2c: do not know how to store type " .. c_type)
+    return 0
+  end
+end
+
+function vpp.c2lua(vpp, c_type, src_ptr, src_len)
+  -- returns the lua data structure
+  local c2lua = vpp.t_c2lua[c_type]
+  if c2lua then
+    return(c2lua(c_type, src_ptr, src_len))
+  else
+    print("vpp.c2lua: do not know how to load type " .. c_type)
+    return nil
+  end
+end
 
 local req_store_cache = ffi.new("vl_api_opaque_message_t[1]")
 
@@ -269,41 +441,15 @@ function vpp.api_write(vpp, api_name, req_table)
       return nil
     end
 
-    local reqptr = ffi.cast(vpp.msg_number_to_pointer_type[msg_num], req_store_cache)
-    local req = reqptr[0]
-    local additional_len = 0 -- for the variable length field at the end of the message
-
-    req._vl_msg_id = ffi.C.htons(msg_num)
     if not req_table then
       req_table = {}
     end
-    for k,v in pairs(req_table) do 
-      local field = vpp.msg_name_to_fields[api_name][k]
-      -- if the field is not an array type, try to coerce the argument to a number
-      if not field.array and type(v) == "string" then
-        v = tonumber(v)
-      end
-      if type(v) == "string" then
-        ffi.copy(req[k], v)
-        if 0 == field.array then
-          additional_len = additional_len + #v
-          -- If there is a variable storing the length
-          -- and the input table does not set it, do magic
-          if field.array_size and not req_table[field.array_size] then
-            local size_field = vpp.msg_name_to_fields[api_name][field.array_size]
-            if size_field then
-              req[field.array_size] = size_field.accessors.lua2c(#v)
-            end
-          end
-        end
-      else 
-        req[k] = field.accessors.lua2c(v)
-      end
-    end
+    req_table._vl_msg_id = msg_num
 
-    -- print("Len of req:", ffi.sizeof(req))
-    res = vpp.pneum.pneum_write(ffi.cast('void *', reqptr), ffi.sizeof(req) + additional_len)
-    -- print("write res:", res)
+    local packed_len = vpp:lua2c(vpp.msg_number_to_type[msg_num], req_table, req_store_cache)
+
+    res = vpp.pneum.pneum_write(ffi.cast('void *', req_store_cache), packed_len)
+    return res
   end
 
 local rep_store_cache = ffi.new("vl_api_opaque_message_t *[1]")
@@ -313,52 +459,24 @@ function vpp.api_read(vpp)
     local rep_type = "vl_api_opaque_message_t"
     local rep = rep_store_cache
     local replen = rep_len_cache
-    -- print("Before read")
     res = vpp.pneum.pneum_read(ffi.cast("void *", rep), replen)
 
-    --print("read:", res)
-    --print("Length: ", replen[0])
     local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id)
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
-    local out = { luaapi_message_name = reply_msg_name, luaapi_message_number = reply_msg_num }
-    -- hex_dump(ffi.string(rep[0], replen[0]))
-    -- print("L7 result:", ffi.C.ntohl(rep[0].retval))
-    -- print("Just before data free")
+
     local reply_typed_ptr = ffi.cast(vpp.msg_number_to_pointer_type[reply_msg_num], rep[0])
-    for k, v in pairs(vpp.msg_name_to_fields[reply_msg_name]) do
-      local v_c2lua = v.accessors and v.accessors.c2lua
-      if v_c2lua then
-        local len = v.array
-        out[k] =  v_c2lua(reply_typed_ptr[k])
-        -- print(dump(v))
-        if len then
-          local len_field_name = k .. "_length"
-          local len_field = vpp.msg_name_to_fields[reply_msg_name][len_field_name]
-          if (len_field) then
-            local real_len = len_field.accessors.c2lua(reply_typed_ptr[len_field_name])
-            out[k] =  v_c2lua(reply_typed_ptr[k], real_len)
-          elseif len == 0 then
-            -- check if len = 0, then must be a field which contains the size
-            len_field =  vpp.msg_name_to_fields[reply_msg_name][v.array_size]
-            local real_len = len_field.accessors.c2lua(reply_typed_ptr[v.array_size])
-            out[k] = v_c2lua(reply_typed_ptr[k], real_len)
-          else
-            -- alas, just stuff the entire array
-            out[k] = v_c2lua(reply_typed_ptr[k], len)
-          end
-        end
-      else
-        out[k] = "<no accessor function>"
-      end
-      -- print(k, out[k])
+    local out = vpp:c2lua(vpp.msg_number_to_type[reply_msg_num], rep[0], replen[0])
+    if type(out) == "table" then
+      out["luaapi_message_name"] = reply_msg_name
     end
+
     vpp.pneum.pneum_data_free(ffi.cast('void *',rep[0]))
-    -- print("Just after data free")
-    return reply_msg_name, out -- , result_bytes are gone for now
+
+    return reply_msg_name, out
   end
 
 function vpp.api_call(vpp, api_name, req_table, options_in)
-    local msg_num = vpp.msg_name_to_number[api_name] 
+    local msg_num = vpp.msg_name_to_number[api_name]
     local end_message_name = api_name .."_reply"
     local replies = {}
     local cstruct = ""
@@ -366,10 +484,10 @@ function vpp.api_call(vpp, api_name, req_table, options_in)
     if msg_num then
       vpp:api_write(api_name, req_table)
       if not vpp.msg_name_to_number[end_message_name] or options.force_ping then
-        end_message_name = "control_ping_reply" 
+        end_message_name = "control_ping_reply"
         vpp:api_write("control_ping")
       end
-      repeat 
+      repeat
         reply_message_name, reply = vpp:api_read()
         if reply and not reply.context then
           -- there may be async events inbetween
