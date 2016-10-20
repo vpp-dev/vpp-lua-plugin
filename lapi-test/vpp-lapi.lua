@@ -295,7 +295,7 @@ void pneum_data_free(char *data);
           if field.array_size and not src[field.array_size] then
             local size_field = fields_info[field.array_size]
             if size_field then
-              dst[field.array_size] = size_field.accessors.lua2c(len)
+              dst[field.array_size] = vpp.t_c2lua[size_field.c_type](size_field.c_type, len)
             end
           end
         end
