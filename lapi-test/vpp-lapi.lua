@@ -106,6 +106,7 @@ end
 
 function vpp.init(vpp, args)
   local pneum_api = args.pneum_api or [[
+ int cough_pneum_attach(char *pneum_path, char *cough_path);
  int pneum_connect(char *name);
  int pneum_connect_sync(char *name);
  int pneum_disconnect(void);
@@ -116,8 +117,26 @@ void pneum_data_free(char *data);
 ]]
 
   vpp.pneum_path = args.pneum_path
-  vpp.pneum = ffi.load(vpp.pneum_path)
   ffi.cdef(pneum_api)
+  local init_res = 0
+  if pcall(function()
+		     vpp.cough_path = args.cough_path or "./libcough.so"
+                     vpp.cough = ffi.load(vpp.cough_path)
+           end) then
+    pcall(function()
+      if(vpp.cough.cough_pneum_attach) then
+        vpp.pneum_is_cough = true
+        print("libcough detected\n")
+        init_res = vpp.cough.cough_pneum_attach(vpp.c_str(vpp.pneum_path), vpp.c_str(vpp.cough_path))
+        vpp.pneum = vpp.cough
+      end
+    end)
+  else
+    vpp.pneum = ffi.load(vpp.pneum_path)
+  end
+  if (init_res < 0) then
+    return nil
+  end
 
   vpp.next_msg_num = 1
   vpp.msg_name_to_number = {}
@@ -319,6 +338,8 @@ void pneum_data_free(char *data);
     end
     return out
   end
+
+  return vpp
 end
 
 function vpp.connect(vpp, client_name)
