@@ -107,8 +107,8 @@ end
 function vpp.init(vpp, args)
   local pneum_api = args.pneum_api or [[
  int cough_pneum_attach(char *pneum_path, char *cough_path);
- int pneum_connect(char *name);
- int pneum_connect_sync(char *name);
+ int pneum_connect(char *name, char *chroot_prefix);
+ int pneum_connect_sync(char *name, char *chroot_prefix);
  int pneum_disconnect(void);
  int pneum_read(char **data, int *l);
  int pneum_write(char *data, int len);
@@ -347,7 +347,7 @@ function vpp.connect(vpp, client_name)
     if client_name then
       name = client_name
     end
-    return vpp.pneum.pneum_connect_sync(vpp.c_str(client_name))
+    return vpp.pneum.pneum_connect_sync(vpp.c_str(client_name), nil)
   end
 
 function vpp.disconnect(vpp)

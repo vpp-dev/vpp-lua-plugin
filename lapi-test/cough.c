@@ -18,6 +18,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 pthread_mutex_t mut;
 pthread_mutex_t *cb_lock = &mut;
@@ -26,8 +27,8 @@ void *pneum_handle = NULL;
 
 typedef void* (*arbitrary)();
 
-int (*orig_pneum_connect)(char *name) = NULL;
-int (*orig_pneum_connect_sync)(char *name) = NULL;
+int (*orig_pneum_connect)(char *name, char *chroot_prefix) = NULL;
+int (*orig_pneum_connect_sync)(char *name, char *chroot_prefix) = NULL;
 int (*orig_pneum_disconnect)(void) = NULL;
 int (*orig_pneum_read)(char **data, int *l) = NULL;
 int (*orig_pneum_write)(char *data, int len) = NULL;
@@ -90,20 +91,20 @@ int cough_pneum_attach(char *pneum_fname, char *cough_fname) {
 }
 
 
-int pneum_connect(char *name) {
+int pneum_connect(char *name, char *chroot_prefix) {
   if(orig_pneum_connect) {
-    return(orig_pneum_connect(name));
+    return(orig_pneum_connect(name, chroot_prefix));
   } else {
     printf("COUGH: pneum_connect\n");
     return -1;
   }
 }
-int pneum_connect_sync(char *name) {
+int pneum_connect_sync(char *name, char *chroot_prefix) {
   if(orig_pneum_connect_sync) {
-    int ret = (orig_pneum_connect_sync(name));
+    int ret = (orig_pneum_connect_sync(name, chroot_prefix));
     return ret;
   } else {
-    return(orig_pneum_connect(name));
+    return(orig_pneum_connect(name, chroot_prefix));
   }
 }
 
