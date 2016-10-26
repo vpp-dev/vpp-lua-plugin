@@ -71,6 +71,170 @@ typedef struct _vl_api_opaque_message {
 ]])
 
 
+-- CRC-based version stuff
+
+local crc32c_table = ffi.new('const uint32_t[256]',
+  { 0x00000000, 0xF26B8303, 0xE13B70F7, 0x1350F3F4,
+  0xC79A971F, 0x35F1141C, 0x26A1E7E8, 0xD4CA64EB,
+  0x8AD958CF, 0x78B2DBCC, 0x6BE22838, 0x9989AB3B,
+  0x4D43CFD0, 0xBF284CD3, 0xAC78BF27, 0x5E133C24,
+  0x105EC76F, 0xE235446C, 0xF165B798, 0x030E349B,
+  0xD7C45070, 0x25AFD373, 0x36FF2087, 0xC494A384,
+  0x9A879FA0, 0x68EC1CA3, 0x7BBCEF57, 0x89D76C54,
+  0x5D1D08BF, 0xAF768BBC, 0xBC267848, 0x4E4DFB4B,
+  0x20BD8EDE, 0xD2D60DDD, 0xC186FE29, 0x33ED7D2A,
+  0xE72719C1, 0x154C9AC2, 0x061C6936, 0xF477EA35,
+  0xAA64D611, 0x580F5512, 0x4B5FA6E6, 0xB93425E5,
+  0x6DFE410E, 0x9F95C20D, 0x8CC531F9, 0x7EAEB2FA,
+  0x30E349B1, 0xC288CAB2, 0xD1D83946, 0x23B3BA45,
+  0xF779DEAE, 0x05125DAD, 0x1642AE59, 0xE4292D5A,
+  0xBA3A117E, 0x4851927D, 0x5B016189, 0xA96AE28A,
+  0x7DA08661, 0x8FCB0562, 0x9C9BF696, 0x6EF07595,
+  0x417B1DBC, 0xB3109EBF, 0xA0406D4B, 0x522BEE48,
+  0x86E18AA3, 0x748A09A0, 0x67DAFA54, 0x95B17957,
+  0xCBA24573, 0x39C9C670, 0x2A993584, 0xD8F2B687,
+  0x0C38D26C, 0xFE53516F, 0xED03A29B, 0x1F682198,
+  0x5125DAD3, 0xA34E59D0, 0xB01EAA24, 0x42752927,
+  0x96BF4DCC, 0x64D4CECF, 0x77843D3B, 0x85EFBE38,
+  0xDBFC821C, 0x2997011F, 0x3AC7F2EB, 0xC8AC71E8,
+  0x1C661503, 0xEE0D9600, 0xFD5D65F4, 0x0F36E6F7,
+  0x61C69362, 0x93AD1061, 0x80FDE395, 0x72966096,
+  0xA65C047D, 0x5437877E, 0x4767748A, 0xB50CF789,
+  0xEB1FCBAD, 0x197448AE, 0x0A24BB5A, 0xF84F3859,
+  0x2C855CB2, 0xDEEEDFB1, 0xCDBE2C45, 0x3FD5AF46,
+  0x7198540D, 0x83F3D70E, 0x90A324FA, 0x62C8A7F9,
+  0xB602C312, 0x44694011, 0x5739B3E5, 0xA55230E6,
+  0xFB410CC2, 0x092A8FC1, 0x1A7A7C35, 0xE811FF36,
+  0x3CDB9BDD, 0xCEB018DE, 0xDDE0EB2A, 0x2F8B6829,
+  0x82F63B78, 0x709DB87B, 0x63CD4B8F, 0x91A6C88C,
+  0x456CAC67, 0xB7072F64, 0xA457DC90, 0x563C5F93,
+  0x082F63B7, 0xFA44E0B4, 0xE9141340, 0x1B7F9043,
+  0xCFB5F4A8, 0x3DDE77AB, 0x2E8E845F, 0xDCE5075C,
+  0x92A8FC17, 0x60C37F14, 0x73938CE0, 0x81F80FE3,
+  0x55326B08, 0xA759E80B, 0xB4091BFF, 0x466298FC,
+  0x1871A4D8, 0xEA1A27DB, 0xF94AD42F, 0x0B21572C,
+  0xDFEB33C7, 0x2D80B0C4, 0x3ED04330, 0xCCBBC033,
+  0xA24BB5A6, 0x502036A5, 0x4370C551, 0xB11B4652,
+  0x65D122B9, 0x97BAA1BA, 0x84EA524E, 0x7681D14D,
+  0x2892ED69, 0xDAF96E6A, 0xC9A99D9E, 0x3BC21E9D,
+  0xEF087A76, 0x1D63F975, 0x0E330A81, 0xFC588982,
+  0xB21572C9, 0x407EF1CA, 0x532E023E, 0xA145813D,
+  0x758FE5D6, 0x87E466D5, 0x94B49521, 0x66DF1622,
+  0x38CC2A06, 0xCAA7A905, 0xD9F75AF1, 0x2B9CD9F2,
+  0xFF56BD19, 0x0D3D3E1A, 0x1E6DCDEE, 0xEC064EED,
+  0xC38D26C4, 0x31E6A5C7, 0x22B65633, 0xD0DDD530,
+  0x0417B1DB, 0xF67C32D8, 0xE52CC12C, 0x1747422F,
+  0x49547E0B, 0xBB3FFD08, 0xA86F0EFC, 0x5A048DFF,
+  0x8ECEE914, 0x7CA56A17, 0x6FF599E3, 0x9D9E1AE0,
+  0xD3D3E1AB, 0x21B862A8, 0x32E8915C, 0xC083125F,
+  0x144976B4, 0xE622F5B7, 0xF5720643, 0x07198540,
+  0x590AB964, 0xAB613A67, 0xB831C993, 0x4A5A4A90,
+  0x9E902E7B, 0x6CFBAD78, 0x7FAB5E8C, 0x8DC0DD8F,
+  0xE330A81A, 0x115B2B19, 0x020BD8ED, 0xF0605BEE,
+  0x24AA3F05, 0xD6C1BC06, 0xC5914FF2, 0x37FACCF1,
+  0x69E9F0D5, 0x9B8273D6, 0x88D28022, 0x7AB90321,
+  0xAE7367CA, 0x5C18E4C9, 0x4F48173D, 0xBD23943E,
+  0xF36E6F75, 0x0105EC76, 0x12551F82, 0xE03E9C81,
+  0x34F4F86A, 0xC69F7B69, 0xD5CF889D, 0x27A40B9E,
+  0x79B737BA, 0x8BDCB4B9, 0x988C474D, 0x6AE7C44E,
+  0xBE2DA0A5, 0x4C4623A6, 0x5F16D052, 0xAD7D5351 }
+);
+
+local function CRC8(crc, d)
+  return bit.bxor(bit.rshift(crc, 8), crc32c_table[bit.band(0xff, bit.bxor(crc, d))])
+end
+
+local function CRC16(crc, d)
+  crc = CRC8(crc, bit.band(d, 0xFF))
+  d = bit.rshift(d, 8)
+  crc = CRC8(crc, bit.band(d, 0xFF))
+  return crc
+end
+
+local function string_crc(str, crc)
+  for i=1,#str do
+    -- print("S", i, string.byte(str, i), string.char(string.byte(str, i)))
+    crc = CRC8(crc, string.byte(str, i))
+  end
+  return crc
+end
+
+local tokens = {
+  { ["match"] =' ', ["act"]             = { }  },
+  { ["match"] ='\n', ["act"]             = { }  },
+  { ["match"] ="manual_endian", ["act"]  = { "NODE_MANUAL_ENDIAN", "MANUAL_ENDIAN",    276 } },
+  { ["match"] ="define", ["act"]         = { "NODE_DEFINE",        "DEFINE",           267 } },
+  { ["match"] ="dont_trace", ["act"]     = { "NODE_DONT_TRACE",    "DONT_TRACE",       279 } },
+  { ["match"] ="f64", ["act"]            = { "NODE_F64",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="i16", ["act"]            = { "NODE_I16",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="i32", ["act"]            = { "NODE_I32",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="i64", ["act"]            = { "NODE_I64",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="i8", ["act"]             = { "NODE_I8",            "PRIMTYPE",         string_crc } },
+  { ["match"] ="manual_print", ["act"]   = { "NODE_MANUAL_PRINT",  "MANUAL_PRINT",     275 } },
+  { ["match"] ="noversion", ["act"]      = { "NODE_NOVERSION",     "NOVERSION",        274 } },
+  { ["match"] ="packed", ["act"]         = { "NODE_PACKED",        "TPACKED",          266 } },
+  { ["match"] ="typeonly", ["act"]       = { "NODE_TYPEONLY",      "TYPEONLY",         278 } },
+  { ["match"] ="u16", ["act"]            = { "NODE_U16",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="u32", ["act"]            = { "NODE_U32",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="u64", ["act"]            = { "NODE_U64",           "PRIMTYPE",         string_crc } },
+  { ["match"] ="u8", ["act"]             = { "NODE_U8",            "PRIMTYPE",         string_crc } },
+  { ["match"] ="union", ["act"]          = { "NODE_UNION",         "UNION",            271 } },
+  { ["match"] ="uword", ["act"]          = { "NODE_UWORD",         "PRIMTYPE",         string_crc } },
+  { ["match"] ="%(", ["act"]             = { "NODE_LPAR",          "LPAR",             259 } },
+  { ["match"] ="%)", ["act"]             = { "NODE_RPAR",          "RPAR",             258 } },
+  { ["match"] =";", ["act"]              = { "NODE_SEMI",          "SEMI",             260 } },
+  { ["match"] ="%[", ["act"]             = { "NODE_LBRACK",        "LBRACK",           261 } },
+  { ["match"] ="%]", ["act"]             = { "NODE_RBRACK",        "RBRACK",           262 } },
+  { ["match"] ="%{", ["act"]             = { "NODE_LCURLY",        "LCURLY",           268 } },
+  { ["match"] ="%}", ["act"]             = { "NODE_RCURLY",        "RCURLY",           269 } },
+  { ["match"] ='%b""', ["act"]           = { "NODE_STRING",        "STRING",           string_crc } },
+  { ["match"] ='%b@@', ["act"]           = { "NODE_HELPER",        "HELPER_STRING",    string_crc } },
+  -- TODO: \ must be consumed
+  { ["match"] ='[_a-zA-Z][_a-zA-Z0-9]*',
+                       ["act"]           = { "NODE_NAME",          "NAME",             string_crc } },
+  { ["match"] ='[0-9]+', ["act"]         = { "NODE_NUMBER",        "NUMBER",           string_crc } },
+  { ["match"] ='#[^\n]+', ["act"]            = { "NODE_PRAGMA",        "PRAGMA",           nil } },
+}
+
+
+function vpp.crc_version_string(data)
+  local input_crc = 0
+  -- Get rid of comments
+  data = data:gsub("/%*.-%*/", "")
+  data = data:gsub("//[^\n]+", "")
+  -- print(data)
+  idx = 1
+  while (true) do
+    local matched = nil
+    for k, v in ipairs(tokens) do
+      if not matched then
+        local x, y, cap = string.find(data, v["match"], idx)
+        if x == idx then
+          matched = { ["node"] = v["act"], ["x"] = x, ["y"] = y, ["cap"] = cap, ["chars"] = string.sub(data, x, y)  }
+          -- print(k, v, x, y, cap, matched.chars, matched.node[0] )
+        end
+      end
+    end
+    if matched then
+      idx = idx + (matched.y - matched.x + 1)
+      if matched.node[1] then
+        local act = matched.node[3]
+        if type(act) == "function" then
+          input_crc = act(matched.chars, input_crc)
+        elseif type(act) == "number" then
+          input_crc = CRC16(input_crc, act)
+        end
+        -- print(vpp.dump(matched))
+      end
+    else
+      -- print("NOT MATCHED!")
+      local crc = CRC16(input_crc, 0xFFFFFFFF)
+      return string.sub(string.format("%x", crc), -8)
+    end
+  end
+end
+
+
 function vpp.dump(o)
    if type(o) == 'table' then
       local s = '{ '
@@ -146,6 +310,7 @@ void pneum_data_free(char *data);
   vpp.msg_number_to_pointer_type = {}
   vpp.c_type_to_fields = {}
   vpp.events = {}
+  vpp.plugin_version = {}
 
 
   vpp.t_lua2c = {}
@@ -268,11 +433,14 @@ void pneum_data_free(char *data);
     local dst = ffi.cast(c_type .. " *", dst_c_ptr)
     local additional_len = 0
     local fields_info = vpp.c_type_to_fields[c_type]
-    -- print("__MSG__ type: " .. tostring(c_type))
+    print("__MSG__ type: " .. tostring(c_type))
     -- print(vpp.dump(fields_info))
-
+    print(vpp.dump(src))
     for k,v in pairs(src) do
       local field = fields_info[k]
+      if not field then
+        print("ERROR: field " .. tostring(k) .. " in message " .. tostring(c_type) .. " is unknown")
+      end
       local lua2c = vpp.t_lua2c[field.c_type]
       -- print("__MSG__ field " .. tostring(k) .. " : " .. vpp.dump(field))
       -- if the field is not an array type, try to coerce the argument to a number
@@ -284,12 +452,24 @@ void pneum_data_free(char *data);
               " type " .. field.c_type .. " dst " .. tostring(dst[k]))
         return 0
       end
-      local len, val = lua2c(field.c_type, v, dst[k])
+      local len = 0
+      local val = nil
+      if field.array and (type(v) == "table") then
+        print("NTFY: field " .. tostring(k) .. " in message " .. tostring(c_type) .. " is an array")
+        for field_i, field_v in ipairs(v) do
+          print("NTFY: setting member#" .. tostring(field_i) .. " to value " .. vpp.dump(field_v))
+          local field_len, field_val = lua2c(field.c_type, field_v, dst[k][field_i-1])
+          len = len + field_len
+        end
+      else
+        len, val = lua2c(field.c_type, v, dst[k])
+      end
       if not field.array then
         dst[k] = val
       else
         if 0 == field.array then
           additional_len = additional_len + len
+          print("Adding " .. tostring(len) .. " bytes due to field " .. tostring(field.name))
           -- If there is a variable storing the length
           -- and the input table does not set it, do magic
           if field.array_size and not src[field.array_size] then
@@ -354,7 +534,7 @@ function vpp.disconnect(vpp)
     vpp.pneum.pneum_disconnect()
   end
 
-function vpp.consume_api(vpp, path)
+function vpp.consume_api(vpp, path, plugin_name)
     -- print("Consuming the VPP api from "..path)
     local ffii = {}
     local f = io.open(path, "r")
@@ -365,6 +545,13 @@ function vpp.consume_api(vpp, path)
     local data = f:read("*all")
     -- Remove all C comments
     data = data:gsub("/%*.-%*/", "")
+    if plugin_name then
+      vpp.plugin_version[plugin_name] = vpp.crc_version_string(data)
+      local full_plugin_name = plugin_name .. "_" .. vpp.plugin_version[plugin_name]
+      local reply = vpp:api_call("get_first_msg_id", { name = full_plugin_name } )
+      vpp.next_msg_num = tonumber(reply[1].first_msg_id)
+      print("Plugin " .. full_plugin_name .. " first message is " .. tostring(vpp.next_msg_num))
+    end
     -- print ("data len: ", #data)
     data = data:gsub("\n(.-)(%S+)%s*{([^}]*)}", function (preamble, name, members)
       local onedef = "\n\n#pragma pack(1)\ntypedef struct _vl_api_"..name.. " {\n" ..
