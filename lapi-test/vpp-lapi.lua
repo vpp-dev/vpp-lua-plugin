@@ -670,6 +670,8 @@ function vpp.api_write(vpp, api_name, req_table)
 
     local packed_len = vpp:lua2c(vpp.msg_number_to_type[msg_num], req_table, req_store_cache)
 
+    print("Message length: " .. tostring(packed_len) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), packed_len)))
+
     res = vpp.pneum.pneum_write(ffi.cast('void *', req_store_cache), packed_len)
     return res
   end
