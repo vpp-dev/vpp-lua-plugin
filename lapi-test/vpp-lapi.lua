@@ -564,8 +564,11 @@ function vpp.consume_api(vpp, path, plugin_name)
     end
     -- print ("data len: ", #data)
     data = data:gsub("\n(.-)(%S+)%s*{([^}]*)}", function (preamble, name, members)
+      local _, typeonly = preamble:gsub("typeonly", "")
+      local maybe_msg_id_field = { [0] = "u16 _vl_msg_id;", "" }
       local onedef = "\n\n#pragma pack(1)\ntypedef struct _vl_api_"..name.. " {\n" ..
-	   "   u16 _vl_msg_id;" ..
+	   -- "   u16 _vl_msg_id;" ..
+           maybe_msg_id_field[typeonly] ..
 	   members:gsub("%[[a-zA-Z_]+]", "[0]") ..
 	   "} vl_api_" .. name .. "_t;"
 
@@ -578,7 +581,9 @@ function vpp.consume_api(vpp, path, plugin_name)
       vpp.t_lua2c[c_type] = vpp.t_lua2c["__MSG__"]
       vpp.t_c2lua[c_type] = vpp.t_c2lua["__MSG__"]
       local mirec = { name = "_vl_msg_id", c_type = "u16", array = nil, array_size = nil }
-      fields[mirec.name] = mirec
+      if typeonly == 0 then
+        fields[mirec.name] = mirec
+      end
 
       -- populate the field reflection table for the message
       -- sets the various type information as well as the accessors for lua<->C conversion
@@ -609,7 +614,6 @@ function vpp.consume_api(vpp, path, plugin_name)
 
       -- print(dump(fields))
 
-      local _, typeonly = preamble:gsub("typeonly", "")
       if typeonly == 0 then
 	local this_message_number = vpp.next_msg_num
 	vpp.next_msg_num = vpp.next_msg_num + 1
