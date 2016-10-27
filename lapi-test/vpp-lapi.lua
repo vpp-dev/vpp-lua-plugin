@@ -354,6 +354,7 @@ void pneum_data_free(char *data);
       for i = 0,src_len-1 do
         out[i+1] = tonumber(ffi.C.ntohs(src_ptr[i]))
       end
+      return out
     else
       return (tonumber(ffi.C.ntohs(src_ptr)))
     end
@@ -423,6 +424,7 @@ void pneum_data_free(char *data);
       for i = 0,src_len-1 do
         out[i+1] = tonumber(src_ptr[i]) -- FIXME ENDIAN
       end
+      return out
     else
       return (tonumber(src_ptr)) --FIXME ENDIAN
     end
@@ -491,6 +493,13 @@ void pneum_data_free(char *data);
     local out = {}
     local reply_typed_ptr = ffi.cast(c_type .. " *", src_ptr)
     local field_desc = vpp.c_type_to_fields[c_type]
+    if src_len then
+      for i = 0,src_len-1 do
+        out[i+1] = vpp.t_c2lua[c_type](c_type, src_ptr[i])
+      end
+      return out
+    end
+
     for k, v in pairs(field_desc) do
       local v_c2lua = vpp.t_c2lua[v.c_type]
       if v_c2lua then
@@ -506,6 +515,7 @@ void pneum_data_free(char *data);
             -- check if len = 0, then must be a field which contains the size
             len_field =  field_desc[v.array_size]
             local real_len = vpp.t_c2lua[len_field.c_type](len_field.c_type, reply_typed_ptr[v.array_size])
+            -- print("REAL length: " .. vpp.dump(v) .. " : " .. tostring(real_len))
             out[k] = v_c2lua(v.c_type, reply_typed_ptr[k], real_len)
           else
             -- alas, just stuff the entire array
@@ -690,7 +700,7 @@ function vpp.api_read(vpp)
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
 
     local reply_typed_ptr = ffi.cast(vpp.msg_number_to_pointer_type[reply_msg_num], rep[0])
-    local out = vpp:c2lua(vpp.msg_number_to_type[reply_msg_num], rep[0], replen[0])
+    local out = vpp:c2lua(vpp.msg_number_to_type[reply_msg_num], rep[0], nil, replen[0])
     if type(out) == "table" then
       out["luaapi_message_name"] = reply_msg_name
     end
