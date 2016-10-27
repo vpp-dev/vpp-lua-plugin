@@ -62,6 +62,7 @@ u16 ntohs(uint16_t hostshort);
 u16 htons(uint16_t hostshort);
 u32 htonl(uint32_t along);
 u32 ntohl(uint32_t along);
+void *memset(void *s, int c, size_t n);
 
 #pragma pack(1)
 typedef struct _vl_api_opaque_message {
@@ -435,6 +436,7 @@ void pneum_data_free(char *data);
     local additional_len = 0
     local fields_info = vpp.c_type_to_fields[c_type]
     print("__MSG__ type: " .. tostring(c_type))
+    ffi.C.memset(dst_c_ptr, 0, ffi.sizeof(dst[0]))
     -- print(vpp.dump(fields_info))
     print(vpp.dump(src))
     for k,v in pairs(src) do
