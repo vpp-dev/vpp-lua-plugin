@@ -670,7 +670,7 @@ function vpp.api_write(vpp, api_name, req_table)
 
     local packed_len = vpp:lua2c(vpp.msg_number_to_type[msg_num], req_table, req_store_cache)
 
-    print("Message length: " .. tostring(packed_len) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), packed_len)))
+    print("Write Message length: " .. tostring(packed_len) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), packed_len)))
 
     res = vpp.pneum.pneum_write(ffi.cast('void *', req_store_cache), packed_len)
     return res
@@ -684,6 +684,7 @@ function vpp.api_read(vpp)
     local rep = rep_store_cache
     local replen = rep_len_cache
     res = vpp.pneum.pneum_read(ffi.cast("void *", rep), replen)
+    print("Read Message length: " .. tostring(replen[0]) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', rep[0]), replen[0])))
 
     local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id)
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
