@@ -311,6 +311,7 @@ void pneum_data_free(char *data);
   vpp.c_type_to_fields = {}
   vpp.events = {}
   vpp.plugin_version = {}
+  vpp.is_connected = false
 
 
   vpp.t_lua2c = {}
@@ -527,7 +528,10 @@ function vpp.connect(vpp, client_name)
     if client_name then
       name = client_name
     end
-    return vpp.pneum.pneum_connect_sync(vpp.c_str(client_name), nil)
+    local ret = vpp.pneum.pneum_connect_sync(vpp.c_str(client_name), nil)
+    if tonumber(ret) == 0 then
+      vpp.is_connected = true
+    end
   end
 
 function vpp.disconnect(vpp)
@@ -545,6 +549,10 @@ function vpp.consume_api(vpp, path, plugin_name)
     local data = f:read("*all")
     -- Remove all C comments
     data = data:gsub("/%*.-%*/", "")
+    if vpp.is_connected and not plugin_name then
+      print(path .. ": must specify plugin name!")
+      return
+    end
     if plugin_name then
       vpp.plugin_version[plugin_name] = vpp.crc_version_string(data)
       local full_plugin_name = plugin_name .. "_" .. vpp.plugin_version[plugin_name]
