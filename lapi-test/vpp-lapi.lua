@@ -63,6 +63,7 @@ u16 htons(uint16_t hostshort);
 u32 htonl(uint32_t along);
 u32 ntohl(uint32_t along);
 void *memset(void *s, int c, size_t n);
+void *memcpy(void *dest, void *src, size_t n);
 
 #pragma pack(1)
 typedef struct _vl_api_opaque_message {
@@ -319,7 +320,9 @@ void pneum_data_free(char *data);
   vpp.t_c2lua = {}
   vpp.t_lua2c["u8"] = function(c_type, src, dst_c_ptr)
     if type(src) == "string" then
-      ffi.copy(dst_c_ptr, src)
+      -- ffi.copy adds a zero byte at the end. Grrr.
+      -- ffi.copy(dst_c_ptr, src)
+      ffi.C.memcpy(dst_c_ptr, vpp.c_str(src), #src)
       return(#src)
     elseif type(src) == "table" then
       for i,v in ipairs(src) do
@@ -327,7 +330,7 @@ void pneum_data_free(char *data);
       end
       return(#src)
     else
-      return 1, ffi.cast("u8", src)
+      return 1, src -- ffi.cast("u8", src)
     end
   end
   vpp.t_c2lua["u8"] = function(c_type, src_ptr, src_len)
@@ -485,6 +488,7 @@ void pneum_data_free(char *data);
           end
         end
       end
+      -- print("Full message:\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), 64)))
     end
     return (ffi.sizeof(dst[0])+additional_len)
   end
