@@ -440,10 +440,10 @@ void pneum_data_free(char *data);
     local dst = ffi.cast(c_type .. " *", dst_c_ptr)
     local additional_len = 0
     local fields_info = vpp.c_type_to_fields[c_type]
-    print("__MSG__ type: " .. tostring(c_type))
+    -- print("__MSG__ type: " .. tostring(c_type))
     ffi.C.memset(dst_c_ptr, 0, ffi.sizeof(dst[0]))
     -- print(vpp.dump(fields_info))
-    print(vpp.dump(src))
+    -- print(vpp.dump(src))
     for k,v in pairs(src) do
       local field = fields_info[k]
       if not field then
@@ -683,8 +683,9 @@ function vpp.api_write(vpp, api_name, req_table)
     req_table._vl_msg_id = msg_num
 
     local packed_len = vpp:lua2c(vpp.msg_number_to_type[msg_num], req_table, req_store_cache)
-
-    print("Write Message length: " .. tostring(packed_len) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), packed_len)))
+    if vpp.debug_dump then
+      print("Write Message length: " .. tostring(packed_len) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', req_store_cache), packed_len)))
+    end
 
     res = vpp.pneum.pneum_write(ffi.cast('void *', req_store_cache), packed_len)
     return res
@@ -698,7 +699,9 @@ function vpp.api_read(vpp)
     local rep = rep_store_cache
     local replen = rep_len_cache
     res = vpp.pneum.pneum_read(ffi.cast("void *", rep), replen)
-    print("Read Message length: " .. tostring(replen[0]) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', rep[0]), replen[0])))
+    if vpp.debug_dump then
+      print("Read Message length: " .. tostring(replen[0]) .. "\n" .. vpp.hex_dump(ffi.string(ffi.cast('void *', rep[0]), replen[0])))
+    end
 
     local reply_msg_num = ffi.C.ntohs(rep[0]._vl_msg_id)
     local reply_msg_name = vpp.msg_number_to_name[reply_msg_num]
