@@ -477,7 +477,7 @@ void pneum_data_free(char *data);
       else
         if 0 == field.array then
           additional_len = additional_len + len
-          print("Adding " .. tostring(len) .. " bytes due to field " .. tostring(field.name))
+          -- print("Adding " .. tostring(len) .. " bytes due to field " .. tostring(field.name))
           -- If there is a variable storing the length
           -- and the input table does not set it, do magic
           if field.array_size and not src[field.array_size] then
