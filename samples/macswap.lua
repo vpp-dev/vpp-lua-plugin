@@ -8,8 +8,8 @@ ffi.cdef("uword unformat_vnet_sw_interface (void * input, void * args);")
 
 
 function c_str(text_in)
-  local text = text_in .. "\0"
-  local c_str = ffi.new("char[?]", #text)
+  local text = text_in
+  local c_str = ffi.new("char[?]", #text+1)
   ffi.copy(c_str, text)
   return c_str
 end

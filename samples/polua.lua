@@ -157,8 +157,8 @@ vnet_l2_output_classify_enable_disable (u32 sw_if_index, int enable_disable);
 
 
 function c_str(text_in)
-  local text = text_in .. "\0"
-  local c_str = ffi.new("char[?]", #text)
+  local text = text_in
+  local c_str = ffi.new("char[?]", #text+1)
   ffi.copy(c_str, text)
   return c_str
 end

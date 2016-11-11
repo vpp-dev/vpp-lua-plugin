@@ -4,8 +4,8 @@ ffi.cdef("uword vlib_node_add_named_next_with_slot (void *vm, uword node, char *
 ffi.cdef("uword vlib_node_add_next_with_slot (void *vm, uword node_index, uword next_node_index, uword slot);")
 
 function c_str(text_in)
-  local text = text_in .. "\0"
-  local c_str = ffi.new("char[?]", #text)
+  local text = text_in
+  local c_str = ffi.new("char[?]", #text+1)
   ffi.copy(c_str, text)
   return c_str
 end
