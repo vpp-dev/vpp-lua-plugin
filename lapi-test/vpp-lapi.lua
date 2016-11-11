@@ -263,8 +263,8 @@ end
 
 
 function vpp.c_str(text_in)
-  local text = text_in .. "\0"
-  local c_str = ffi.new("char[?]", #text)
+  local text = text_in -- \000 will be helpfully added by ffi.copy
+  local c_str = ffi.new("char[?]", #text+1)
   ffi.copy(c_str, text)
   return c_str
 end
